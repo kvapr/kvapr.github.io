@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Local LLM Serving: NVIDIA GPUs vs Qualcomm NPUs (IQ-9075)</title>
+<style>
+  :root {
+    --bg: #ffffff; --fg: #1a1d23; --muted: #5a6270; --accent: #0b6e4f;
+    --accent2: #76b900; --qc: #3253dc; --card: #f6f8fa; --border: #d8dde4;
+    --code-bg: #f0f2f5; --code-fg: #24292f; --th-bg: #eef1f4;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1216; --fg: #e6e9ee; --muted: #9aa4b2; --accent: #4dd2a5;
+      --accent2: #a3e635; --qc: #8fa6ff; --card: #171c22; --border: #2a323c;
+      --code-bg: #1a2028; --code-fg: #d5dbe3; --th-bg: #1e252d;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 16px/1.65 -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  }
+  main { max-width: 900px; margin: 0 auto; padding: 2.5rem 1.25rem 4rem; }
+  h1 { font-size: 1.85rem; line-height: 1.25; margin: 0 0 .25rem; }
+  h2 { font-size: 1.35rem; margin: 2.5rem 0 .75rem; padding-top: 1rem; border-top: 1px solid var(--border); }
+  h3 { font-size: 1.05rem; margin: 1.5rem 0 .5rem; }
+  .subtitle { color: var(--muted); margin-bottom: 2rem; }
+  p { margin: .7rem 0; }
+  a { color: var(--qc); }
+  strong { font-weight: 650; }
+  code, pre {
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace;
+    font-size: .85em;
+  }
+  code { background: var(--code-bg); color: var(--code-fg); padding: .12em .35em; border-radius: 4px; }
+  pre {
+    background: var(--code-bg); color: var(--code-fg); border: 1px solid var(--border);
+    border-radius: 8px; padding: .9rem 1rem; overflow-x: auto; line-height: 1.5;
+  }
+  pre code { background: none; padding: 0; }
+  table { border-collapse: collapse; width: 100%; margin: 1rem 0; font-size: .92rem; display: block; overflow-x: auto; }
+  th, td { border: 1px solid var(--border); padding: .45rem .7rem; text-align: left; vertical-align: top; }
+  th { background: var(--th-bg); }
+  .card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+    padding: 1rem 1.25rem; margin: 1rem 0;
+  }
+  .nv { border-left: 4px solid var(--accent2); }
+  .qcc { border-left: 4px solid var(--qc); }
+  .callout { border-left: 4px solid var(--accent); }
+  ul, ol { padding-left: 1.4rem; }
+  li { margin: .3rem 0; }
+  .cmt { color: var(--muted); }
+  .ladder { font-size: .95rem; }
+  .tag {
+    display: inline-block; font-size: .75rem; font-weight: 600; letter-spacing: .03em;
+    padding: .1em .55em; border-radius: 999px; border: 1px solid var(--border);
+    color: var(--muted); vertical-align: middle; margin-left: .4rem;
+  }
+</style>
+</head>
+<body>
+<main>
+
+<p style="margin:0 0 1.5rem"><a href="../../" style="color:var(--muted);text-decoration:none;font-size:.9rem">&#8592; home</a></p>
+
+<h1>Local LLM Serving: NVIDIA GPUs vs Qualcomm NPUs</h1>
+<p class="subtitle">Offline inference of open-weight Hugging Face models — toolchains, steps, and limits. Target device: Qualcomm Dragonwing IQ-9075. Research notes, August 2026.</p>
+
+<h2 id="why">1. Why the two paths are fundamentally different</h2>
+
+<div class="card nv">
+<p><strong>NVIDIA</strong> — The GPU is a general-purpose massively-parallel processor with a mature compiler stack (CUDA). Inference frameworks execute the model <em>directly from its original weights</em>: the safetensors files from Hugging Face are loaded and run as-is (or quantized on the fly). The runtime <em>interprets</em> the architecture from <code>config.json</code> at load time. No ahead-of-time hardware-specific conversion.</p>
+</div>
+
+<div class="card qcc">
+<p><strong>Qualcomm (IQ-9075 / Dragonwing)</strong> — A heterogeneous SoC: Kryo CPU + Adreno GPU + <strong>Hexagon NPU</strong>. The NPU holds the AI TOPS but is a DSP-like accelerator, and the official path to it executes only <strong>pre-compiled static graphs</strong>: ahead-of-time compilation into a <strong>QNN context binary</strong> (quantized, graph-frozen, per-SoC). The architecture is co-engineered three times — Python adaptation layer, compiled graph, and Genie C++ runtime — which is why only a catalog of supported architectures works. (AOT is a property of this QNN path, not of the NPU silicon — <a href="#geniex">§9</a> covers the second way to drive it.)</p>
+</div>
+
+<h2 id="nvidia">2. Path 1: NVIDIA (RTX / Jetson / data-center)</h2>
+<p><strong>Tools:</strong> <code>llama.cpp</code>/Ollama (easiest), vLLM (serving throughput), TensorRT-LLM (max perf), or plain <code>transformers</code>.</p>
+<ol>
+<li><code>pip install vllm</code></li>
+<li><code>vllm serve meta-llama/Llama-3.1-8B-Instruct</code> — downloads safetensors from HF and serves an OpenAI-compatible API (gated repos like meta-llama need an HF token first). Done.</li>
+<li>Optional: pick a quantized variant (GGUF, AWQ, GPTQ, FP8) to fit VRAM — quantization is done by the community/you with open tools, not the vendor.</li>
+</ol>
+<p><strong>Key property:</strong> <em>any</em> architecture with a <code>transformers</code> implementation runs day one — including a model released this morning. TensorRT-LLM adds an optional compile step for speed, but it's a choice, not a gate.</p>
+
+<h2 id="qualcomm">3. Path 2: Qualcomm IQ-9075 — three routes</h2>
+
+<h3>Route A — llama.cpp on CPU/GPU <span class="tag">no conversion</span></h3>
+<p>Grab a GGUF from HF, run <code>llama-cli</code>/<code>llama-server</code> on the Kryo CPU or the Adreno GPU (OpenCL backend). Any GGUF model works — same freedom as NVIDIA — but the NPU sits idle, so performance and power efficiency fall far below the chip's potential.</p>
+
+<h3>Route B — llama.cpp Hexagon NPU backend <span class="tag">new · open-source</span></h3>
+<p>Qualcomm upstreamed a Hexagon backend into llama.cpp (Android first; Linux support landed April 2026, targeting exactly this device class). Independent efforts (<a href="https://github.com/zhouwg/ggml-hexagon">ggml-hexagon</a>, <a href="https://github.com/haozixu/llama.cpp-npu">llama.cpp-npu</a>) program the NPU directly with HVX intrinsics, bypassing QNN. GGUF in, NPU acceleration out, no per-model vendor conversion — still maturing (op coverage, quant formats). GenieX (<a href="#geniex">§9</a>) now ships this backend as its supported <code>llama_cpp</code> runtime.</p>
+
+<h3>Route C — Official stack: AI Hub → QAIRT/QNN → Genie <span class="tag">full NPU perf</span></h3>
+<table>
+<tr><th>Piece</th><th>What it is</th></tr>
+<tr><td><strong>QAIRT SDK</strong> (formerly QNN / AI Engine Direct)</td><td>Compiler + runtime; converts ONNX/PyTorch graphs to NPU <strong>context binaries</strong> (v2.29+ for IQ-9075)</td></tr>
+<tr><td><strong>Qualcomm AI Hub</strong> (<code>pip install qai-hub qai-hub-models</code>)</td><td>Cloud service that runs conversion/quantization/compilation and profiles on real devices — self-service <strong>for catalog models only</strong></td></tr>
+<tr><td><strong>Genie</strong></td><td>Lightweight on-device LLM runtime: loads context binaries, handles autoregressive decoding, KV cache, sampling on the NPU</td></tr>
+</table>
+<p><strong>Measured perf on this hardware class:</strong> ~10 tok/s for Llama 3.2 3B, ~5 tok/s for Llama 3.1 8B — usable interactive speeds at a few watts.</p>
+
+<h2 id="limitation">4. The real limitation: what Qualcomm's engineers do per model</h2>
+
+<div class="card callout">
+<p><strong>You cannot convert an arbitrary HF LLM.</strong> Every supported LLM in <code>qai-hub-models</code> has a hand-written implementation by Qualcomm engineers. The catalog is the boundary, per chip — see <a href="https://aihub.qualcomm.com">aihub.qualcomm.com</a> filtered by device "Dragonwing IQ-9075".</p>
+</div>
+
+<h3>4.1 Architecture surgery (per model family)</h3>
+<p>In <code>_shared/llama3/model_adaptations.py</code> the HuggingFace modeling code is rewritten into NPU-friendly form:</p>
+<ul>
+<li><code>SHALlamaAttention</code> — multi-head attention rewritten as <strong>single-head attention</strong> (lists of small per-head ops), which maps far better onto the Hexagon HTP than one big batched matmul</li>
+<li><code>nn.Linear</code> layers → <strong>1×1 Conv2d</strong> (<code>ConvInplaceLinear</code>) — HTP prefers conv kernels</li>
+<li>A <strong>custom RoPE implementation</strong> (real/imag half-split instead of HF's interleaving)</li>
+<li>A <strong>custom KV-cache class</strong> (<code>SHADynamicCacheNewValueOnly</code>) emitting only the <em>new</em> KV values as graph outputs, since the cache lives outside the static graph</li>
+<li>Magic constants matched to Genie's C++ internals — a Genie-era source comment read: <em>"Align with Genie (Genie/src/qualla/src/src/engines/qnn-htp/nsp-model.cpp)"</em> for the attention-mask clip value (−1000.0 vs −50.0 depending on precision)</li>
+</ul>
+
+<h3>4.2 Per-model constants</h3>
+<p>Each model (e.g. <code>llama_v3_2_3b_instruct/model.py</code>) hard-codes: number of splits (3B: 28 layers shipped as 3 binaries), head counts, hidden size, quantization recipe overrides, which params stay INT8.</p>
+
+<h3>4.3 Genie runtime support</h3>
+<p>The C++ runtime itself must implement the architecture's specifics (RoPE scaling variants, GQA <code>kv-dim</code>, sampler behavior). A new attention scheme or MoE router = new Genie code.</p>
+
+<h3>What you CAN do self-service</h3>
+<ul>
+<li>Recompile catalog models for your chip / context length</li>
+<li>Push <strong>fine-tuned weights of a catalog architecture</strong> through the pipeline (<code>quantize.py --checkpoint &lt;your-finetune-dir&gt;</code>)</li>
+<li>The repo is BSD-3 open source, so a third party <em>could</em> add a new architecture by following the pattern — but that's weeks of engineering, not running a converter</li>
+</ul>
+
+<h2 id="quant">5. Deep dive: the AI Hub quantization pipeline</h2>
+
+<pre><code>HF safetensors
+  → adapted PyTorch model (SHA attention, conv-linears, static shapes)
+  → ONNX export, split into 3 parts × 2 graph variants
+  → AIMET-ONNX QuantSim + calibration  →  model.encodings
+  → AI Hub cloud compile (per target SoC)
+  → 3 × QNN context binaries (.bin)  →  Genie bundle</code></pre>
+
+<h3>Two graphs per model, sharing one set of weights</h3>
+<p>Because the NPU only runs static shapes, the export creates two "instantiations":</p>
+<ul>
+<li><strong>Prompt processor</strong> — <code>prompt_ar128_cl4096</code>: consumes 128 tokens per pass (prefill)</li>
+<li><strong>Token generator</strong> — <code>token_ar1_cl4096</code>: 1 token per pass (decode)</li>
+</ul>
+<p>Both compile into the same context binaries with <code>weight_sharing_enabled: true</code>, so weights exist once in memory. The KV cache is <strong>graph I/O</strong> with fixed shape (<code>context_length − sequence_length</code> slots) — which is why context length is baked in at compile time.</p>
+
+<h3>The quantization scheme (from <code>_shared/llm/model.py</code>)</h3>
+<table>
+<tr><th>Component</th><th>Precision</th></tr>
+<tr><td>Weights (default <code>w4a16</code>)</td><td><strong>INT4</strong>, min-max scheme, AIMET HTP config</td></tr>
+<tr><td>Activations</td><td><strong>INT16</strong></td></tr>
+<tr><td>KV cache</td><td><strong>INT8</strong>, quantizers <em>tied</em> across concat ops</td></tr>
+<tr><td>LM head matmul</td><td>mixed <strong>16×8</strong> (16-bit activations × 8-bit weights)</td></tr>
+<tr><td>Selected params (embeddings etc.)</td><td>held at <strong>INT8</strong> per-channel symmetric</td></tr>
+<tr><td>Alternative <code>w4</code> mode</td><td>INT4 weights, <strong>FP16</strong> activations, INT8 lm_head</td></tr>
+</table>
+
+<h3>Calibration</h3>
+<p><code>quantize.py</code> runs ~20 WikiText samples at sequence length 2048 through the FP model under AIMET-ONNX's <code>QuantizationSimModel</code> to compute quantization ranges, saved as <code>model.encodings</code>. Optional accuracy-recovery passes: <code>--use-seq-mse</code> (Sequential MSE per-layer weight-rounding optimization), AdaScale, and <code>--spinquant r1,r2,r3</code> (rotation-based outlier suppression). Quality is then checked with perplexity/MMLU evaluators in the same repo.</p>
+
+<h3>Compile and practical numbers</h3>
+<p>The compile step happens on AI Hub's cloud (QAIRT compiles the quantized ONNX into HTP context binaries for the exact target SoC). Export takes <strong>2–3 hours</strong>; the 3B model recommends <strong>~80 GB RAM+swap</strong> on the host.</p>
+
+<pre><code># fine-tuned weights of a supported arch, then export for your board:
+python -m qai_hub_models.models.llama_v3_2_3b_instruct.quantize \
+    --checkpoint ./my-finetune --use-seq-mse -o ./quantized
+python -m qai_hub_models.models.llama_v3_2_3b_instruct.export \
+    --checkpoint ./quantized --device "Dragonwing IQ-9075" \
+    --context-length 2048 --output-dir genie_bundle</code></pre>
+
+<h2 id="genie">6. Deep dive: Genie config, field by field</h2>
+<p>Production config for Llama 3.2 3B (from <code>ai-hub-apps/tutorials/llm_on_genie/configs/genie/</code>), annotated:</p>
+
+<pre><code>{ "dialog": {
+    "version": 1,
+    "type": "basic",                    <span class="cmt">// basic text-to-text; other types exist (e.g. embedding)</span>
+    "context": {
+      "size": 4096,                     <span class="cmt">// MUST match the compiled context length</span>
+      "n-vocab": 128256,                <span class="cmt">// vocab size of the model</span>
+      "bos-token": 128000,
+      "eos-token": [128001, 128008, 128009]   <span class="cmt">// all stop tokens</span>
+    },
+    "sampler": {                        <span class="cmt">// runtime-tunable, NOT baked into the binary</span>
+      "seed": 42, "temp": 0.8, "top-k": 40, "top-p": 0.95
+    },
+    "tokenizer": { "path": "tokenizer.json" },  <span class="cmt">// verbatim from the HF repo</span>
+    "engine": {
+      "n-threads": 3,
+      "backend": {
+        "type": "QnnHtp",               <span class="cmt">// NPU. (QnnGpu/QnnCpu exist as fallbacks)</span>
+        "QnnHtp": {
+          "use-mmap": true,             <span class="cmt">// mmap weights (set false on Windows laptops)</span>
+          "spill-fill-bufsize": 0,      <span class="cmt">// scratch buffer shared across the split graphs</span>
+          "mmap-budget": 0,
+          "poll": true,                 <span class="cmt">// busy-poll the NPU instead of interrupts (latency)</span>
+          "cpu-mask": "0xe0",           <span class="cmt">// pin Genie's CPU threads to big cores</span>
+          "kv-dim": 128,                <span class="cmt">// head_dim of the KV cache</span>
+          "allow-async-init": false
+        },
+        "extensions": "htp_backend_ext_config.json"   <span class="cmt">// per-chip file, below</span>
+      },
+      "model": {
+        "type": "binary",
+        "binary": { "ctx-bins": [       <span class="cmt">// the compiled splits, in order</span>
+          "llama_v3_2_3b_instruct_part_1_of_3.bin",
+          "llama_v3_2_3b_instruct_part_2_of_3.bin",
+          "llama_v3_2_3b_instruct_part_3_of_3.bin" ] },
+        "positional-encoding": {        <span class="cmt">// Genie computes RoPE outside the graph —</span>
+          "type": "rope",               <span class="cmt">// it must UNDERSTAND your model's variant</span>
+          "rope-dim": 64, "rope-theta": 500000,
+          "rope-scaling": { "rope-type": "llama3", "factor": 8.0,
+            "low-freq-factor": 1.0, "high-freq-factor": 4.0,
+            "original-max-position-embeddings": 8192 }
+        }
+      }
+    }
+}}</code></pre>
+
+<p>Note <code>positional-encoding</code> — the architecture-lock made visible in config: Genie only knows the RoPE variants implemented in its C++ (<code>llama3</code> scaling here). A model with a novel positional scheme cannot be described in this file at all.</p>
+
+<h3>The per-chip file: <code>htp_backend_ext_config.json</code></h3>
+<pre><code>{ "devices": [{
+    "soc_model": 69,          <span class="cmt">// numeric SoC ID  (Gen2=43, Gen3=57, 8 Elite=69, X Elite=60;</span>
+    "dsp_arch": "v79",        <span class="cmt">//  Hexagon ISA version — for IQ-9075 take both values from</span>
+    "cores": [{ "core_id": 0, <span class="cmt">//  the QAIRT SDK's supported-devices table)</span>
+      "perf_profile": "burst", "rpc_control_latency": 100 }] }],
+  "memory":  { "mem_type": "shared_buffer" },
+  "context": { "weight_sharing_enabled": true }   <span class="cmt">// prefill+decode graphs share weights</span>
+}</code></pre>
+
+<h3>Running it</h3>
+<pre><code>export LD_LIBRARY_PATH=$QNN_SDK_ROOT/lib/aarch64-oe-linux-gcc11.2   # + Hexagon skels
+./genie-t2t-run -c genie_config.json \
+  -p "&lt;|begin_of_text|&gt;&lt;|start_header_id|&gt;user&lt;|end_header_id|&gt;Hello!&lt;|eot_id|&gt;&lt;|start_header_id|&gt;assistant&lt;|end_header_id|&gt;"</code></pre>
+<p>The prompt template is <em>your</em> job at this layer — Genie is lower-level than Ollama; the ChatApp samples in <code>ai-hub-apps</code> wrap it with templates and an OpenAI-compatible service.</p>
+
+<h2 id="ctxbin">7. Deep dive: inside a QNN context binary</h2>
+<p>The <code>.bin</code> files are not "model files" in the HF sense — they are serialized, finalized QNN <strong>contexts</strong>. Contents:</p>
+<ol>
+<li><strong>Context metadata</strong> — the QAIRT/QNN version that built it, target SoC and Hexagon arch (v73/v75/v79), and HTP configuration (VTCM allotment, optimization level, weight-compression/DLBC settings). This is why a binary is <strong>version- and SoC-locked</strong>: what follows is compiled for one specific chip generation.</li>
+<li><strong>Prepared graphs</strong> — one or more per binary. For an LLM split, each <code>.bin</code> holds <em>both</em> LLM graphs: <code>prompt_ar128_cl4096_N_of_3</code> (prefill) and <code>token_ar1_cl4096_N_of_3</code> (decode). "Prepared" means fully lowered by the HTP graph compiler: ops fused and scheduled across the <strong>HVX</strong> (vector) and <strong>HMX</strong> (matrix) units, tensors tiled through <strong>VTCM</strong> (the NPU's on-chip scratch SRAM, ~8 MB class), and a static memory plan including the <strong>spill-fill buffer</strong> — DDR scratch for intermediate tiles, shared across all three split binaries (the <code>spill-fill-bufsize</code> knob in the Genie config).</li>
+<li><strong>Quantized weights</strong> — INT4/INT8 payloads laid out for HMX consumption. With <code>weight_sharing_enabled: true</code>, the prefill and decode graphs in the same context reference a single copy.</li>
+<li><strong>I/O tensor descriptors</strong> — names, static shapes, dtypes (e.g. 16-bit fixed-point activations, INT8 KV-cache I/O) and per-tensor scale/offset quantization params. This is how Genie knows how to quantize inputs and dequantize logits/KV at the graph boundary.</li>
+</ol>
+<h3>Inspecting one</h3>
+<pre><code>qnn-context-binary-utility --context_binary llama_v3_2_3b_instruct_part_1_of_3.bin \
+                           --json_file part1.json
+<span class="cmt"># → context metadata, graph list, per-graph input/output tensors with dims,
+#   dtypes, and scale/offset encodings. The compiled kernel code and weight
+#   blobs remain opaque.</span></code></pre>
+<p><strong>Execution path at runtime:</strong> Genie → <code>libQnnHtp.so</code> (CPU side) → FastRPC → cDSP skel (<code>libQnnHtpV73Skel.so</code> / V75 / V79) → the NPU executes the prepared graph. The <code>poll</code>/<code>cpu-mask</code> Genie options tune the CPU side of this round-trip; <code>rpc_control_latency</code> in the HTP extensions file tunes the FastRPC link.</p>
+
+<h2 id="ssd">8. Deep dive: the <code>_ssd</code> variants — Self Speculative Decoding</h2>
+<p>AI Hub ships <code>llama_v3_2_3b_instruct_ssd</code> (and friends) — same model, faster decode, with <em>"guaranteed output accuracy identical to the base model."</em> SSD = <strong>Self</strong> Speculative Decoding: unlike classic speculative decoding there is <strong>no separate draft model</strong>. From <code>_shared/llm_ssd/model.py</code>:</p>
+<h3>The mechanism</h3>
+<ul>
+<li><strong>Learned forecast tokens.</strong> The checkpoint (<code>forecast_module_state_dict.pt</code>) contains <code>forecast_embedding</code> — extra rows <em>appended to the embedding table</em> (vocab grows by <code>forecast-token-count</code>). Feeding these special tokens makes the model predict several future positions in one pass — multi-token prediction via learned embeddings rather than extra heads, so the compiled graph stays identical to the base model's.</li>
+<li><strong>Forecast prefix (precomputed KV).</strong> <code>forecast_prefix</code> is a short precomputed KV-cache segment, quantized to INT8 using the model's own <code>past_key_*_in</code>/<code>past_value_*_in</code> calibration encodings and shipped as <code>forecast-prefix/kv-cache.primary.qnn-htp</code> (a raw file: 16-byte header — tensor count, <code>0xC0DE</code> magic, dtype, heads, kv-dim, tokens — then key caches, then value caches).</li>
+<li><strong>Speculation tree.</strong> The Genie dialog type flips from <code>basic</code> to <code>ssd-q1</code>:</li>
+</ul>
+<pre><code>"dialog": { "type": "ssd-q1",
+  "ssd-q1": {
+    "forecast-token-count": N,     <span class="cmt">// learned forecast embeddings</span>
+    "forecast-prefix": L,          <span class="cmt">// length of the precomputed KV prefix</span>
+    "forecast-prefix-name": "forecast-prefix",
+    "branches": [3, 2],            <span class="cmt">// speculation tree: 3-wide, then 2-wide</span>
+    "n-streams": 1,
+    "p-threshold": 0.0             <span class="cmt">// probability cutoff for pruning branches</span>
+  } }</code></pre>
+<ul>
+<li><strong>Wide verify graph.</strong> The SSD token generator compiles an <strong>AR-32</strong> graph instead of AR-1 (the base repo notes "SSD uses an AR-32 token graph") — one NPU pass scores up to 32 positions, so drafting the tree and verifying it happen in a single shot.</li>
+<li><strong>Engine overrides:</strong> <code>n-threads: 0</code>, <code>mmap-budget: 40</code>, <code>allow-async-init: true</code>.</li>
+</ul>
+<h3>Why it's faster, and why it's exact</h3>
+<p>NPU decode is memory-bandwidth-bound: scoring 32 positions costs nearly the same as scoring 1 (weights are streamed either way). If on average &gt;1 speculated token per pass survives verification, tokens/sec multiplies. And because the <em>same</em> model verifies its own drafts with standard speculative accept/reject, the output distribution is mathematically identical to the base model — pure latency optimization, zero accuracy trade.</p>
+<p>The catch: quantizing your <em>own</em> SSD variant means training/calibrating the forecast module — the README calls for a dedicated CUDA GPU (40 GB VRAM for 3B, 80 GB for 8B). Another reminder of how vendor-engineered this path is.</p>
+
+<h2 id="geniex">9. Update (mid-2026): GenieX replaces Genie</h2>
+<div class="card callout">
+<p>The <code>_ssd</code> README states: <em>"Note: Genie support will be deprecated soon."</em> The replacement is <a href="https://github.com/qualcomm/GenieX"><strong>GenieX</strong></a> — an open-source runtime from Qualcomm's Nexa AI acquisition (developer preview, mid-2026): "run frontier LLMs and VLMs locally on Qualcomm devices across NPU, GPU, and CPU with a few lines of code."</p>
+</div>
+<p>GenieX unifies the two worlds this document contrasts, dispatching to either of two bundled runtimes:</p>
+<table>
+<tr><th>GenieX runtime</th><th>Model format</th><th>Hardware targets</th></tr>
+<tr><td><code>llama_cpp</code></td><td><strong>GGUF</strong> (any)</td><td>Hexagon NPU via ggml-hexagon, Adreno GPU via OpenCL, CPU</td></tr>
+<tr><td><code>qairt</code></td><td><strong>QAIRT <code>.bin</code> shards</strong> (catalog)</td><td>Hexagon NPU via QNN — max perf-per-watt</td></tr>
+</table>
+<p class="cmt">(AI Hub's export scripts emit GenieX-ready catalog bundles via <code>--target-runtime geniex_qairt</code>.)</p>
+
+<h3>Two ways to drive the same NPU</h3>
+<p>A confusion worth clearing first: "using the NPU" and "AOT compilation" are not the same thing. AOT is a property of the <em>QNN path</em>, not of the NPU itself — the Hexagon NPU can be driven two ways, and GenieX contains both.</p>
+<p><strong>Way 1 — QNN/QAIRT (AOT, catalog-only).</strong> The <em>entire transformer</em> is compiled ahead of time into one frozen graph per SoC. The compiler sees the whole model, so it can fuse ops, plan VTCM tiling, and lay out weights for the HMX matrix unit. Maximum perf-per-watt — and everything <a href="#limitation">§4</a>–<a href="#ctxbin">§7</a> describe about catalogs and conversion applies.</p>
+<p><strong>Way 2 — ggml-hexagon (no AOT, any model).</strong> llama.cpp's Hexagon backend works the way CUDA does: it ships a <strong>fixed library of pre-compiled kernels</strong> (matmul, rmsnorm, softmax…) to the DSP once, then <strong>dispatches ops one at a time at runtime</strong>, walking whatever graph the GGUF describes. No per-model compilation, no catalog, no Qualcomm involvement — any GGUF runs. The price: no cross-op fusion, more DDR round-trips between ops, less optimal memory planning — meaningfully slower than Way 1, but still NPU-accelerated.</p>
+
+<h3>The NVIDIA analogy</h3>
+<table>
+<tr><th></th><th>NVIDIA</th><th>Qualcomm NPU</th></tr>
+<tr><td>Runtime op dispatch (any model)</td><td>PyTorch / llama.cpp on CUDA</td><td>ggml-hexagon (GenieX <code>llama_cpp</code>)</td></tr>
+<tr><td>AOT whole-graph compile (max perf)</td><td>TensorRT engine</td><td>QNN context binary (GenieX <code>qairt</code>)</td></tr>
+</table>
+<p>NVIDIA has the same two modes — you just never think about TensorRT because CUDA's "eager" mode is already fast. On Qualcomm the gap between the two modes is much larger, and historically <strong>only the AOT mode existed for the NPU</strong>. That's what made the catalog feel like a hard wall.</p>
+
+<h3>What GenieX actually solves — and what it doesn't</h3>
+<ol>
+<li><strong>It makes Way 2 a first-class, supported product.</strong> Before, running an arbitrary GGUF on the Hexagon meant building llama.cpp yourself from a maturing backend (Route B, <a href="#qualcomm">§3</a>). Now it's pip-install-grade, Qualcomm-supported, one API.</li>
+<li><strong>One runtime, per-model choice.</strong> The API and server are the same whether the model is a random GGUF (<code>llama_cpp</code> runtime) or a catalog model at peak efficiency (<code>qairt</code> runtime). App code doesn't change; the backend is a config knob.</li>
+<li><strong>Developer experience.</strong> Model download, prompt templates, OpenAI-compatible serving — versus hand-assembling Genie bundles, tokenizer files, and HTP config JSONs (<a href="#genie">§6</a>).</li>
+</ol>
+<p>What GenieX does <strong>not</strong> solve: <strong>the perf gap</strong>. If you want the ~10 tok/s-class efficiency of the compiled path for a model <em>outside</em> the catalog, GenieX doesn't help — that still takes Qualcomm (or you, weeks of engineering) doing the adaptation work of <a href="#limitation">§4</a>.</p>
+<p>So the freedom ladder is better read as a <strong>dial inside one tool</strong>:</p>
+<pre><code>GenieX ─┬─ llama_cpp runtime → any GGUF  → NPU (per-op dispatch)  [freedom, decent perf]
+        └─ qairt runtime     → catalog   → NPU (AOT full graph)   [catalog, peak perf]</code></pre>
+
+<h3>How Genie relates to GenieX</h3>
+<p>GenieX does not <em>wrap</em> the old Genie library — it is the <strong>community successor</strong> ("the community version of Qualcomm GENIE," per the repo). Genie's engine role — executing AOT-compiled catalog bundles on the NPU — became the <code>qairt</code> runtime inside GenieX, with an SDK layer above it and a second, catalog-free runtime beside it:</p>
+<div style="background:#ffffff;border:1px solid var(--border);border-radius:10px;padding:.5rem;overflow-x:auto;margin:1rem 0;">
+<img src="geniex-architecture.svg" alt="GenieX architecture diagram: app layer over GenieX C SDK, dispatching to the llama_cpp runtime (any GGUF, per-op dispatch, CPU/GPU/NPU) and the qairt runtime (catalog bundles, AOT context binaries, NPU only — Genie's old role), both landing on Kryo CPU / Adreno GPU / Hexagon NPU" style="max-width:100%;display:block;margin:0 auto;">
+</div>
+<p>Genie (deprecated) was only the <code>qairt</code> box in this picture, shipped as a bare C++ library: hand-assembled bundles, no model pull, no server, no GGUF path.</p>
+
+<h2 id="summary">10. Summary comparison</h2>
+<table>
+<tr><th></th><th>NVIDIA GPU</th><th>Qualcomm NPU (QNN catalog path)</th></tr>
+<tr><td>Model freedom</td><td>Any HF architecture, day one</td><td>Catalog only (~15 families); fine-tunes of catalog archs OK</td></tr>
+<tr><td>Conversion</td><td>None (optional TensorRT compile for speed)</td><td>Mandatory AOT compile to per-SoC QNN context binaries</td></tr>
+<tr><td>Quantization</td><td>Community/self (GGUF, AWQ, GPTQ, FP8), on-the-fly</td><td>Vendor recipe (W4A16 via AIMET), baked at compile</td></tr>
+<tr><td>Context length</td><td>Runtime-configurable</td><td>Baked into the binary; recompile to change</td></tr>
+<tr><td>Portability</td><td>CUDA binaries broadly portable across GPUs</td><td>Context binary tied to one SoC generation</td></tr>
+<tr><td>Model size ceiling</td><td>24 GB card → 30B-class</td><td>Shared LPDDR + W4A16 → ~1B–8B class</td></tr>
+<tr><td>Perf-per-watt</td><td>Lower</td><td>Excellent (few watts for 3B @ ~10 tok/s)</td></tr>
+<tr><td>Escape hatch</td><td>—</td><td>llama.cpp on CPU/Adreno (any GGUF); Hexagon backend maturing</td></tr>
+</table>
+
+<div class="card callout ladder">
+<strong>The freedom ladder:</strong> NVIDIA (anything) → llama.cpp CPU/GPU on Qualcomm (any GGUF, slow) → llama.cpp Hexagon backend (any GGUF, op-coverage caveats) → Genie/GenieX-qairt NPU stack (catalog only, best perf-per-watt). As of mid-2026, <a href="#geniex">GenieX (§9)</a> wraps the last three rungs in a single runtime — the ladder becomes a dial inside one tool.
+</div>
+
+<h2 id="sources">Sources</h2>
+<ul>
+<li><a href="https://github.com/qualcomm/ai-hub-apps/tree/main/tutorials/llm_on_genie">LLM on Genie tutorial + configs (qualcomm/ai-hub-apps)</a></li>
+<li><a href="https://github.com/qualcomm/ai-hub-models">qai-hub-models source</a> — <code>_shared/llm/model.py</code>, <code>_shared/llama3/model_adaptations.py</code>, <code>llama_v3_2_3b_instruct/</code></li>
+<li><a href="https://aihub.qualcomm.com">Qualcomm AI Hub model catalog</a></li>
+<li><a href="https://docs.qualcomm.com/doc/80-62010-1/topic/genie.html">Genie docs</a></li>
+<li><a href="https://docs.edgeimpulse.com/hardware/boards/qualcomm-iq9075-evk">IQ-9075 EVK (Edge Impulse docs)</a></li>
+<li><a href="https://github.com/ggml-org/llama.cpp/blob/master/docs/backend/snapdragon/linux.md">llama.cpp Snapdragon backend docs — Hexagon on Linux (landed April 2026)</a></li>
+<li><a href="https://github.com/zhouwg/ggml-hexagon">ggml-hexagon</a> · <a href="https://github.com/haozixu/llama.cpp-npu">llama.cpp-npu</a></li>
+<li><a href="https://github.com/qualcomm/ai-hub-models">qai-hub-models <code>_shared/llm_ssd/model.py</code> + <code>llama_v3_2_3b_instruct_ssd/</code></a> — SSD mechanism and Genie <code>ssd-q1</code> config</li>
+<li><a href="https://github.com/qualcomm/GenieX">GenieX repo</a> · <a href="https://www.qualcomm.com/developer/blog/2026/06/geniex-developer-preview">GenieX developer preview announcement</a> · <a href="https://geniex.aihub.qualcomm.com/en/get-started/what-is-geniex">GenieX docs</a></li>
+<li><a href="https://docs.radxa.com/en/fogwise/airbox-q900/ai-dev/qairt-tools">QAIRT CLI tools incl. qnn-context-binary-utility (Radxa docs)</a></li>
+</ul>
+
+</main>
+</body>
+</html>
