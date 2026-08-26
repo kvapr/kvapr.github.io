@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>On-device LLMs: the context window is the spec to watch</title>
+<style>
+  :root {
+    --bg: #ffffff; --fg: #1a1d23; --muted: #5a6270; --accent: #0b6e4f;
+    --qc: #3253dc; --border: #d8dde4;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1216; --fg: #e6e9ee; --muted: #9aa4b2; --accent: #4dd2a5;
+      --qc: #8fa6ff; --border: #2a323c;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 17px/1.65 -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  }
+  main { max-width: 720px; margin: 0 auto; padding: 2.5rem 1.25rem 4rem; }
+  h1 { font-size: 1.7rem; line-height: 1.25; margin: 0 0 .25rem; }
+  .subtitle { color: var(--muted); margin-bottom: 2rem; }
+  p { margin: .8rem 0; }
+  a { color: var(--qc); }
+  ul { padding-left: 1.4rem; }
+  li { margin: .35rem 0; }
+  .fig {
+    background: #ffffff; border: 1px solid var(--border); border-radius: 10px;
+    padding: .5rem; margin: 1.5rem 0; overflow-x: auto;
+  }
+  .fig img { max-width: 100%; display: block; margin: 0 auto; }
+</style>
+</head>
+<body>
+<main>
+
+<p style="margin:0 0 1.5rem"><a href="../../" style="color:var(--muted);text-decoration:none;font-size:.9rem">&#8592; home</a></p>
+
+<h1>On-device LLMs: the context window is the spec to watch</h1>
+<p class="subtitle">Notes from running Qwen3-4B on a Qualcomm NPU. August 2026.</p>
+
+<p>I've been running Qwen3-4B on the NPU of a Qualcomm board. On this platform you don't so much load a model as install one: models ship as precompiled NPU binaries, and their shape — including the context window — is baked in when the bundle is compiled. The published bundle gives you 4K tokens.</p>
+
+<p>4K sounded fine. Then I built an agent on top of it.</p>
+
+<p>Here's the budget I was actually working with:</p>
+
+<ul>
+<li>The system prompt ate about 700 tokens.</li>
+<li>Every tool definition — the JSON schema the model needs to call an API — cost roughly 600 more.</li>
+<li>With four tools loaded, that left under 1,000 tokens for the conversation, the tool's output, and the answer.</li>
+</ul>
+
+<p>That last line is the whole problem. My agent has 12 tools, so I could only expose 4 at a time and had to rotate subsets. One fat tool result — a diagnostics dump, an interface table — could blow the window and fail the entire request. And chat history? Forget it. Every request was effectively single-shot.</p>
+
+<div class="fig">
+<img src="where-the-context-window-goes.png" alt="Diagram comparing two context-window budgets for Qwen3-4B on a Qualcomm NPU. The published 4K bundle: system prompt about 700 tokens, tool schemas where only 4 of 12 fit at about 600 tokens per tool, and under 1,000 tokens left for conversation and answer. The 8K bundle recompiled with Qualcomm AI Hub: the same system prompt, then room for all 12 tool schemas, multi-turn conversation, and the answer. Caption: same weights, same silicon — context length is a compile-time parameter.">
+</div>
+
+<p>My first instinct was to blame the model size. That instinct was wrong. Context length is just a compile-time parameter, and the vendor happens to publish exactly one configuration — but the compile pipeline, Qualcomm AI Hub, is open. So I recompiled the same model at 8K.</p>
+
+<p>What that bought me, on the same silicon:</p>
+
+<ul>
+<li>The full 12-tool set fits. My test went from failing all six runs to completing every one.</li>
+<li>Real tool outputs fit, without me aggressively truncating them.</li>
+<li>Actual multi-turn conversation. Follow-up questions work now.</li>
+<li>And the part I didn't expect to value most: independence. Once you can compile your own bundle, the vendor's published config is a default, not a ceiling.</li>
+</ul>
+
+<p>Now the bill — and I measured this rather than assuming, which turned out to matter. These compiled NPU graphs are fixed-shape, so every decode step pays for the whole window whether you use it or not:</p>
+
+<ul>
+<li>The 8K build runs about twice as slow per turn on identical prompts. Median went from 6.7 s to 12.9 s.</li>
+<li>Accuracy stayed within a couple of points. Same weights; small numeric shifts flip the occasional borderline token.</li>
+<li>The KV cache roughly doubled, ~350 MB to ~700 MB, which still has to clear the accelerator's per-context memory limit.</li>
+</ul>
+
+<p>So the 8K build doesn't replace the 4K one — it's a second operating point. Both bundles sit on the accelerator side by side: small window for snappy interactive turns, big window when the agent needs its whole toolbox. On compiled NPU stacks, you buy context with per-token time. The trick is owning the compile pipeline, so that trade-off is yours to make instead of the vendor's.</p>
+
+<p>If you're evaluating small models for on-device work: look at the context window before the parameter count. It's the spec that separates a demo from a product.</p>
+
+</main>
+</body>
+</html>
