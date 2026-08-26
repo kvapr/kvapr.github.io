@@ -22,6 +22,7 @@
   }
   main { max-width: 720px; margin: 0 auto; padding: 2.5rem 1.25rem 4rem; }
   h1 { font-size: 1.7rem; line-height: 1.25; margin: 0 0 .25rem; }
+  h2 { font-size: 1.25rem; margin: 2.2rem 0 .6rem; padding-top: .9rem; border-top: 1px solid var(--border); }
   .subtitle { color: var(--muted); margin-bottom: 2rem; }
   p { margin: .8rem 0; }
   a { color: var(--qc); }
@@ -42,7 +43,7 @@
 <h1>On-device LLMs: the context window is the spec to watch</h1>
 <p class="subtitle">Notes from running Qwen3-4B on a Qualcomm NPU. August 2026.</p>
 
-<p>I've been running Qwen3-4B on the NPU of a Qualcomm board. On this platform you don't so much load a model as install one: models ship as precompiled NPU binaries, and their shape — including the context window — is baked in when the bundle is compiled. The published bundle gives you 4K tokens.</p>
+<p>I've been running Qwen3-4B on the NPU of a Qualcomm QCS9075 board. On this platform you don't so much load a model as install one: models ship as precompiled NPU binaries, and their shape — including the context window — is baked in when the bundle is compiled. The published bundle gives you 4K tokens.</p>
 
 <p>4K sounded fine. Then I built an agent on top of it.</p>
 
@@ -60,7 +61,19 @@
 <img src="where-the-context-window-goes.png" alt="Diagram comparing two context-window budgets for Qwen3-4B on a Qualcomm NPU. The published 4K bundle: system prompt about 700 tokens, tool schemas where only 4 of 12 fit at about 600 tokens per tool, and under 1,000 tokens left for conversation and answer. The 8K bundle recompiled with Qualcomm AI Hub: the same system prompt, then room for all 12 tool schemas, multi-turn conversation, and the answer. Caption: same weights, same silicon — context length is a compile-time parameter.">
 </div>
 
+<h2>Why the window is baked in</h2>
+
+<p>It's worth pausing on why this number is fixed at all, because it's nothing like the GPU world, where context length is a flag you pass at load time. On this stack, the NPU executes only precompiled static graphs. The model is exported as a pair of graphs sharing one copy of the weights — a prompt processor that consumes a fixed number of tokens per pass, and a token generator that produces one token per pass — and the KV cache isn't an internal buffer the runtime can grow. It's graph input and output, with a shape fixed at compile time. The window isn't a setting stored next to the model; it's the geometry of the compiled artifact. Changing it means compiling a different artifact.</p>
+
+<p>(I went deep on this pipeline — the per-model adaptation, quantization, and what actually lives inside a compiled context binary — in <a href="../nvidia-vs-qualcomm-local-llm/">a separate write-up</a>.)</p>
+
+<h2>The recompile</h2>
+
 <p>My first instinct was to blame the model size. That instinct was wrong. Context length is just a compile-time parameter, and the vendor happens to publish exactly one configuration — but the compile pipeline, Qualcomm AI Hub, is open. So I recompiled the same model at 8K.</p>
+
+<p>Mechanically, that means running the model's export through AI Hub with a different context-length setting: the pipeline re-exports the graphs at the new shape and compiles them in the cloud for the exact target chip. It's self-service for the models in Qualcomm's catalog — no vendor involvement, though not fast: the compile is an hours-scale, big-host-RAM affair, not an edit-and-reload loop. You do it once per operating point you want to own.</p>
+
+<h2>What 8K bought</h2>
 
 <p>What that bought me, on the same silicon:</p>
 
@@ -71,13 +84,21 @@
 <li>And the part I didn't expect to value most: independence. Once you can compile your own bundle, the vendor's published config is a default, not a ceiling.</li>
 </ul>
 
+<h2>What it cost</h2>
+
 <p>Now the bill — and I measured this rather than assuming, which turned out to matter. These compiled NPU graphs are fixed-shape, so every decode step pays for the whole window whether you use it or not:</p>
 
 <ul>
-<li>The 8K build runs about twice as slow per turn on identical prompts. Median went from 6.7 s to 12.9 s.</li>
+<li>The 8K build runs about twice as slow per turn on identical prompts — 1.9× at the median, 6.7 s to 12.9 s.</li>
 <li>Accuracy stayed within a couple of points. Same weights; small numeric shifts flip the occasional borderline token.</li>
 <li>The KV cache roughly doubled, ~350 MB to ~700 MB, which still has to clear the accelerator's per-context memory limit.</li>
 </ul>
+
+<p>The slowdown isn't an inefficiency someone will optimize away — it's the same geometry that makes the window fixed. Because the decode graph has a static shape, each step attends over the full window regardless of how much of it is occupied, and the doubled KV cache is that much more memory traffic on a bandwidth-bound workload. You buy capacity with per-token time, every token.</p>
+
+<p>For the record, the setup behind those numbers: six trials per configuration on identical prompts, on device. Under 4K, all six failed, dominated by context overflow on large tool results; under 8K, all six completed with the full toolset resident. Two honest caveats: the ~600-token schema figure comes from the one 4-schema configuration I had deployed, and I never benchmarked the alternatives — schema compression, routing between tool subsets, aggressive output truncation. The recompile made them unnecessary for my case, but for someone who can't recompile, they're the remaining levers.</p>
+
+<h2>Two operating points</h2>
 
 <p>So the 8K build doesn't replace the 4K one — it's a second operating point. Both bundles sit on the accelerator side by side: small window for snappy interactive turns, big window when the agent needs its whole toolbox. On compiled NPU stacks, you buy context with per-token time. The trick is owning the compile pipeline, so that trade-off is yours to make instead of the vendor's.</p>
 
