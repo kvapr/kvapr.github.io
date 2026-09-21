@@ -107,7 +107,7 @@
 <p class="subtitle">What changes when one 4-billion-parameter model moves from a board's CPU cores to its neural accelerator, with everything else held fixed: same model file, same runtime binary, same prompts, same harness. One flag differs.</p>
 
 <div class="abstract">
-<p>Most CPU-versus-NPU comparisons change three things at once: the model format, the runtime, and the compute unit, then report one number and call it a hardware comparison. This post changes one thing. It is the measurement behind two claims made elsewhere on this blog: that the compute unit changes speed only, which closed a gap in <a href="../serving-path-is-the-model-revisited/">the serving-path finding</a>, and that agent workloads live in prefill while chat lives in decode. Every number is from one afternoon on a Qualcomm QCS9075, five repetitions per row, run-to-run spread under one percent. Measured 10 September 2026.</p>
+<p>Most CPU-versus-NPU comparisons change three things at once: the model format, the runtime, and the compute unit, then report one number and call it a hardware comparison. This post changes one thing, and then explains the result. The measurement backs a claim made in <a href="../serving-path-is-the-model-revisited/">the serving-path post</a>, that the compute unit changes speed only. The second half is the mechanism: why an NPU wins one phase and a CPU holds the other, and why chat and agents care about different phases. Every number is from one afternoon on a Qualcomm QCS9075, five repetitions per row, run-to-run spread under one percent. Measured 10 September 2026.</p>
 </div>
 
 <h2 id="summary">Summary</h2>
@@ -173,15 +173,33 @@
 <p>It is a different model format, so it is not part of the controlled pair, and it scored 92.3% on the same benchmark against 98.5% for the GGUF paths. The fastest path is not the most accurate one; the six-point gap is the format, not the silicon. (The 2,795-token row could not be measured on this path in the serving version used, a generation-length limitation fixed in a newer release.)</p>
 </div>
 
-<h2 id="why">Why the CPU wins decode</h2>
+<h2 id="why">Why the NPU wins prefill and the CPU holds decode</h2>
 
-<ul>
-<li>Prefill processes the whole prompt in parallel: compute-bound, exactly what a matrix accelerator is built for.</li>
-<li>Decode produces one token at a time and is bound by memory bandwidth; on this board the NPU shares that memory with the CPU, so it gains nothing there, and each token also pays a round trip between CPU and accelerator. At this model size that tax exceeds the accelerator's gain.</li>
-<li>Public leaderboards rank decode, the one phase where a CPU holds its own. For chat that is the right column. For agents, retrieval and summarization, rank by prefill and first token instead.</li>
-</ul>
+<p>Every language-model request has two phases, and they are not alike.</p>
 
-<p>The mechanism behind these numbers, without the numbers, is written up separately as "Chat is decode, agents are prefill". The accuracy side of the same afternoon, the 98.5% that did not move between compute units and the six points the compiled format costs, is in <a href="../serving-path-is-the-model-revisited/">the serving-path post</a>.</p>
+<p>Prefill is the model reading the prompt. The prompt's tokens go through the network in large parallel batches of matrix work. It is parallel and compute-bound, which is exactly the job a neural accelerator is built for. Put the same model on a CPU and on an NPU, and prefill is where the NPU pulls ahead, by a wide margin: five to seven times in the table above.</p>
+
+<p>Decode is the model writing the answer. It produces one token at a time, and each token needs the weights pulled through memory again. For a single request, that makes decode bound by memory bandwidth, not by arithmetic. On an NPU that shares the system's memory with the CPU, which is how the NPU in a phone or an embedded board is built, the accelerator gets no bandwidth advantage, and each token also pays a round trip between the CPU that runs the loop and the accelerator that runs the math. So the CPU holds its own on decode, and on this board it wins it. A discrete GPU with its own faster memory is a different case; it wins both phases. The honest summary of CPU versus NPU on one chip is not "the NPU is faster". It is "the NPU reads faster and does not write faster".</p>
+
+<p>Speed is the subject of this post, not efficiency. The NPU does its share of the work at a fraction of the power and heat, and on the CPU a decode loop pins every core; the thermal log from this run had the CPU legs running noticeably hotter than the NPU legs.</p>
+
+<h2 id="shape">Which phase matters</h2>
+
+<p>It depends on the shape of the request.</p>
+
+<p>A chat turn is a short prompt and a long answer. A person types a sentence and the model writes paragraphs. Nearly all the time goes to decode, so for chat the CPU-versus-NPU question is close, and decode speed is the number to look at. The 256-token row is the chat case in miniature: the NPU's prefill gain and its decode loss cancel, and the two paths tie end to end.</p>
+
+<p>An agent turn is the reverse. The prompt carries the system instructions, the tool schemas, the conversation so far, and whatever the last tool returned: device state, a file, a search result. The answer is a short structured call, unless the model thinks out loud first, which moves the balance back toward decode. Otherwise the turn is nearly all prefill, so the NPU's reading speed is the whole story, and the wait before the first token is what the user feels. That is the 52.5 s against 14.5 s above. Retrieval and summarization have the same shape: read a lot, write a little.</p>
+
+<p>Prefix caching changes this where it exists, since the system prompt and tool schemas repeat every turn. Many on-device runtimes cannot keep the cache across requests, so the prompt is read in full each time, and that is the case measured here.</p>
+
+<h2 id="leaderboards">What this does to leaderboards</h2>
+
+<p>Most of them lead with decode tokens per second. That is the right column for chat and the wrong one for agents. Two chips that look close on a chat leaderboard can be far apart on an agent workload, and the one that wins the chat benchmark can lose the agent one.</p>
+
+<p>The practical rule is short. Before choosing a compute unit, or reading a benchmark, know your prompt-to-answer ratio. If you write more than you read, rank by decode. If you read more than you write, rank by prefill and time to first token, the columns most leaderboards do not print. On this board those columns are where the accelerator earns its place.</p>
+
+<p>The accuracy side of the same afternoon, the 98.5% that did not move between compute units and the six points the compiled format costs, is in <a href="../serving-path-is-the-model-revisited/">the serving-path post</a>.</p>
 
 </main>
 </body>
