@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Serving Path Is the Model</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,500&family=Source+Sans+3:ital,wght@0,400;0,600;1,400;1,600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --ground:#F3F5F7; --surface:#FFFFFF; --surface-2:#EBEFF2;
+  --ink:#161E27; --ink-2:#3B4754; --muted:#66727F;
+  --hair:#D5DCE3; --hair-2:#E4E9EE;
+  --accent:#0F6F7C; --accent-2:#0B5561; --accent-soft:rgba(15,111,124,.10);
+  --pass:#25795A; --pass-soft:rgba(37,121,90,.12);
+  --loss:#B5382E; --loss-soft:rgba(181,56,46,.11);
+  --code-bg:#EEF2F5; --link:#0F6F7C;
+  --display:"Fraunces",Georgia,"Times New Roman",serif;
+  --sans:"Source Sans 3","Segoe UI",Helvetica,Arial,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ground:#0E1317; --surface:#151B21; --surface-2:#1B232B;
+    --ink:#E5EBF1; --ink-2:#C1CBD5; --muted:#8793A0;
+    --hair:#27313B; --hair-2:#202932;
+    --accent:#4DC4D0; --accent-2:#8FDDE5; --accent-soft:rgba(77,196,208,.14);
+    --pass:#5CC08F; --pass-soft:rgba(92,192,143,.16);
+    --loss:#EA7D71; --loss-soft:rgba(234,125,113,.16);
+    --code-bg:#0B0F13; --link:#8FDDE5;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0E1317; --surface:#151B21; --surface-2:#1B232B;
+  --ink:#E5EBF1; --ink-2:#C1CBD5; --muted:#8793A0;
+  --hair:#27313B; --hair-2:#202932;
+  --accent:#4DC4D0; --accent-2:#8FDDE5; --accent-soft:rgba(77,196,208,.14);
+  --pass:#5CC08F; --pass-soft:rgba(92,192,143,.16);
+  --loss:#EA7D71; --loss-soft:rgba(234,125,113,.16);
+  --code-bg:#0B0F13; --link:#8FDDE5;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--sans);font-size:17px;line-height:1.6;-webkit-font-smoothing:antialiased}
+.page{max-width:52rem;margin:0 auto;padding-inline:20px;padding-block:3rem 5rem}
+.page > p,.page > ul,.page > ol,.page h2,.page h3,.page > .note,.page > .lede{max-width:38rem}
+header.masthead{padding-bottom:1.5rem;border-bottom:1px solid var(--hair);margin-bottom:1.75rem;max-width:44rem}
+.eyebrow{font-family:var(--mono);font-size:.72rem;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:0 0 1rem;display:flex;flex-wrap:wrap;gap:.3rem 1.2rem}
+h1{font-family:var(--display);font-variation-settings:"opsz" 96;font-weight:600;font-size:2.6rem;line-height:1.08;letter-spacing:-.015em;margin:0 0 .9rem;text-wrap:balance}
+.dek{font-family:var(--display);font-style:italic;font-weight:500;font-variation-settings:"opsz" 24;font-size:1.22rem;line-height:1.45;color:var(--ink-2);margin:0 0 1.2rem;text-wrap:pretty}
+.meta{font-family:var(--mono);font-size:.76rem;color:var(--muted);margin:0;display:flex;flex-wrap:wrap;gap:.3rem 1.2rem}
+nav.toc{font-size:.92rem;margin:0 0 2rem;padding:.9rem 1.1rem;background:var(--surface);border:1px solid var(--hair);border-radius:6px;max-width:44rem}
+nav.toc .toc-label{display:block;font-family:var(--mono);font-size:.68rem;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:.35rem}
+nav.toc ol{margin:0;padding-left:1.25rem;columns:2;column-gap:2rem}
+nav.toc li{margin:.12rem 0;break-inside:avoid}
+nav.toc a{color:var(--ink-2);border:0}
+nav.toc a:hover{color:var(--link)}
+h2{font-family:var(--display);font-variation-settings:"opsz" 48;font-weight:600;font-size:1.65rem;line-height:1.2;letter-spacing:-.01em;margin:2.9rem 0 .8rem;padding-top:1.4rem;border-top:1px solid var(--hair);text-wrap:balance}
+h3{font-family:var(--sans);font-weight:600;font-size:1.08rem;line-height:1.3;margin:2.1rem 0 .55rem;color:var(--ink)}
+p{margin:.7rem 0;text-wrap:pretty}
+a{color:var(--link);text-decoration:none;border-bottom:1px solid color-mix(in srgb,var(--link) 35%,transparent)}
+a:hover{border-bottom-color:var(--link)}
+a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+strong{font-weight:600}
+em{font-style:italic}
+ul,ol{padding-left:1.35rem;margin:.6rem 0}
+li{margin:.35rem 0}
+li::marker{color:var(--muted)}
+code{font-family:var(--mono);font-size:.86em;font-variant-ligatures:none;font-feature-settings:"liga" 0,"calt" 0}
+p code,li code,td code{background:var(--code-bg);padding:.06em .32em;border-radius:3px;color:var(--ink)}
+pre{margin:.9rem 0 1.1rem;background:var(--code-bg);border:1px solid var(--hair);border-radius:6px;padding:.9rem 1rem;overflow-x:auto;font-family:var(--mono);font-size:.84rem;line-height:1.6;color:var(--ink);font-variant-ligatures:none;font-feature-settings:"liga" 0,"calt" 0}
+pre code{font-size:1em}
+.tablewrap{overflow-x:auto;margin:1rem 0 1.25rem}
+table{border-collapse:collapse;width:100%;font-size:.92rem;line-height:1.45;font-variant-numeric:tabular-nums}
+thead th{text-align:left;font-family:var(--mono);font-weight:500;font-size:.68rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);padding:.45rem .75rem .45rem 0;border-bottom:1px solid var(--ink);white-space:nowrap}
+tbody td{vertical-align:top;padding:.55rem .75rem .55rem 0;border-bottom:1px solid var(--hair)}
+tbody tr:last-child td{border-bottom:1px solid var(--ink)}
+th.num,td.num{text-align:right}
+th:last-child,td:last-child{padding-right:0}
+td.name{font-weight:600;color:var(--ink);white-space:nowrap}
+.loss{color:var(--loss);font-weight:600}
+.pass{color:var(--pass);font-weight:600}
+.fn{font-size:.82rem;color:var(--muted);margin:-.6rem 0 1.2rem;max-width:44rem}
+figure{margin:1.5rem 0 1.75rem;padding:1.1rem 1.1rem .8rem;background:var(--surface);border:1px solid var(--hair);border-radius:8px}
+figure svg{width:100%;height:auto;display:block;color:var(--ink);font-family:var(--sans)}
+figcaption{font-size:.86rem;color:var(--muted);margin-top:.7rem;line-height:1.5;max-width:38rem}
+figcaption .figno{font-weight:600;color:var(--ink-2)}
+svg text{font-size:12.5px;fill:currentColor}
+svg text.h{font-weight:600;font-size:13px}
+svg text.b{font-weight:600}
+svg text.s{fill:var(--muted);font-size:11.5px}
+svg text.mono{font-family:var(--mono);font-size:11px}
+svg text.tag{fill:var(--accent);font-family:var(--mono);font-size:9.5px;letter-spacing:.08em}
+svg text.lbl{fill:var(--muted);font-size:11px}
+svg .lane{fill:var(--surface-2);stroke:var(--hair);stroke-width:1}
+svg .fp{fill:var(--surface);stroke:var(--accent);stroke-width:1.5}
+svg .box{fill:var(--surface-2);stroke:var(--hair);stroke-width:1}
+svg .dec{fill:var(--surface);stroke:var(--accent);stroke-width:1.5}
+svg .end{fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5}
+svg .flow{fill:none;stroke:currentColor;stroke-width:1.5}
+.note{margin:1rem 0;padding:.9rem 1.1rem;background:var(--surface);border:1px solid var(--hair);border-left:3px solid var(--accent);border-radius:0 6px 6px 0;font-size:.95rem;color:var(--ink-2)}
+.note p{margin:0}
+.home{margin:0 0 1.5rem;font-family:var(--mono);font-size:.78rem}
+.home a{color:var(--muted);border:0}
+.home a:hover{color:var(--link)}
+footer.colophon{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--hair);font-family:var(--mono);font-size:.74rem;color:var(--muted)}
+@media (max-width:640px){
+  body{font-size:16px}
+  .page{padding-block:2rem 4rem}
+  h1{font-size:2rem}
+  nav.toc ol{columns:1}
+}
+@media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="page">
+<p class="home"><a href="../../">&#8592; home</a></p>
+<header class="masthead">
+  <p class="eyebrow"><span>LLMs on Qualcomm silicon</span><span>Measurements as of August 2026</span></p>
+  <h1>The Serving Path Is the Model</h1>
+  <p class="dek">Same weights, same benchmark, same 4-bit quantization class: 0% through one serving stack, 100% through another — and it happened four times, with four different failure signatures.</p>
+  <p class="meta"><span>Krish Viswanathan</span><span>Qualcomm QCS9075 · Dragonwing IQ-9075 EVK</span><span>65-case tool-calling suite</span></p>
+</header>
+
+<nav class="toc" aria-label="Sections"><span class="toc-label">Sections</span>
+<ol>
+<li><a href="#serving-path">What the serving path is</a></li>
+<li><a href="#benchmark">The benchmark, briefly</a></li>
+<li><a href="#ladder">The ladder</a></li>
+<li><a href="#counterpoint">The counterpoint: schema shape</a></li>
+<li><a href="#methodology">The methodology this forces</a></li>
+<li><a href="#leaderboards">What this means for eval leaderboards</a></li>
+<li><a href="#principles">Transferable principles</a></li>
+<li><a href="#current">Current as of</a></li>
+</ol>
+</nav>
+
+<p>Start with the table that reorganized how I evaluate models.</p>
+
+<div class="tablewrap">
+<table>
+<thead><tr><th>Model</th><th>Quantization</th><th>Serving path</th><th class="num">Tool-calling e2e (65 cases)</th></tr></thead>
+<tbody>
+<tr><td class="name">Gemma-4-E4B</td><td>W4A16, compiled NPU bundle</td><td>GenieX (<code>qairt</code> backend)</td><td class="num"><span class="loss">0%</span> (0/65)</td></tr>
+<tr><td class="name">Gemma-4-E4B</td><td>Q4_0 GGUF</td><td>llama.cpp CPU, <code>--jinja</code></td><td class="num"><span class="pass">100%</span> (65/65)</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>Both rows are measured, August 2026, on the same 65-case tool-calling suite with strict end-to-end grading — the 100% includes exact-key, type-faithful nested arguments. The model is identical. The quantization is the same 4-bit class. The prompts are identical. What changed is the serving path: how the request became tokens, and how the generated text became a structured tool call. (Strictly, the compute unit and the exact 4-bit scheme also differ between the rows — but the runtime maintainer later confirmed two serving bugs as the cause, which is why the attribution to the serving path is documented rather than inferred; the full story is in rung 1.)</p>
+
+<p>If a model can score 0 and 100 on the same benchmark depending on how you serve it, then a tool-calling benchmark score is not a property of a model. It is a property of a (model, serving path) pair. This article is the evidence for that claim: a four-rung ladder of models I measured through at least two serving paths each, the failure signature at each rung, one null result about the thing people expect to matter (schema design — it didn't), and the methodology I now follow before blaming any model for anything.</p>
+
+<p>Context for new readers: I run an intent-driven network-management agent fully offline on a Qualcomm QCS9075 (Dragonwing IQ-9075 EVK — evaluation kit). The language model runs on the board's Hexagon NPU (neural processing unit) as a compiled 4-bit bundle. Earlier articles cover the porting and benchmarking story; this one stands alone.</p>
+
+<h2 id="serving-path">What the serving path is</h2>
+
+<p>The serving path is everything between an OpenAI-style API request and the structured <code>tool_calls</code> array the agent consumes. It has exactly two transformations, and each one is a place where a perfectly good model can be made to look broken:</p>
+
+<ol>
+<li><strong>Template in.</strong> The serving layer renders your <code>messages</code> and <code>tools</code> into the literal token sequence the model was trained to see — the chat template. Every model family has its own: its own special tokens, its own place and format for tool schemas, its own way of marking a tool-call turn.</li>
+<li><strong>Parser out.</strong> The model emits text. The serving layer must recognize the tool-call portion and convert it into structured JSON the client can act on. If the parser expects a wrapper tag the model didn't emit — or the detokenizer corrupted — the call is silently dropped.</li>
+</ol>
+
+<figure>
+<svg viewBox="0 0 780 300" role="img" aria-label="A request travels from the agent through the serving layer's chat template to the model, and the model's text travels back through the serving layer's parser to the agent. The template and the parser are marked as failure point 1 and failure point 2.">
+<defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5 0 10z" fill="currentColor"/></marker></defs>
+<rect class="lane" x="20" y="52" width="190" height="220" rx="6"/>
+<rect class="lane" x="280" y="52" width="250" height="220" rx="6"/>
+<rect class="lane" x="610" y="52" width="150" height="220" rx="6"/>
+<text class="h" x="115" y="36" text-anchor="middle">Agent</text>
+<text class="h" x="405" y="36" text-anchor="middle">Serving layer</text>
+<text class="h" x="685" y="36" text-anchor="middle">Model (NPU or CPU)</text>
+<text class="mono" x="115" y="108" text-anchor="middle">POST /v1/chat/completions</text>
+<text class="s" x="115" y="126" text-anchor="middle">messages + tool schemas</text>
+<text class="s" x="115" y="212" text-anchor="middle">validate · human-confirm</text>
+<text class="s" x="115" y="228" text-anchor="middle">· execute</text>
+<rect class="fp" x="300" y="82" width="210" height="58" rx="5"/>
+<text class="tag" x="312" y="98">FAILURE POINT 1</text>
+<text class="b" x="312" y="118">Template in</text>
+<text class="s" x="312" y="133">renders tools into the prompt</text>
+<rect class="fp" x="300" y="182" width="210" height="58" rx="5"/>
+<text class="tag" x="312" y="198">FAILURE POINT 2</text>
+<text class="b" x="312" y="218">Parser out</text>
+<text class="s" x="312" y="233">turns text into structured calls</text>
+<text class="s" x="685" y="108" text-anchor="middle">compiled bundle</text>
+<text class="s" x="685" y="124" text-anchor="middle">or GGUF</text>
+<text class="s" x="685" y="212" text-anchor="middle">generates tokens</text>
+<line class="flow" x1="210" y1="111" x2="298" y2="111" marker-end="url(#ar)"/>
+<text class="lbl" x="254" y="103" text-anchor="middle">request</text>
+<line class="flow" x1="510" y1="111" x2="608" y2="111" marker-end="url(#ar)"/>
+<text class="lbl" x="559" y="103" text-anchor="middle">token IDs</text>
+<line class="flow" x1="610" y1="211" x2="512" y2="211" marker-end="url(#ar)"/>
+<text class="lbl" x="561" y="203" text-anchor="middle">generated text</text>
+<line class="flow" x1="300" y1="211" x2="212" y2="211" marker-end="url(#ar)"/>
+<text class="mono" x="256" y="203" text-anchor="middle">tool_calls</text>
+</svg>
+<figcaption><span class="figno">Figure 1.</span> The two transformations of a serving path. The template renders the request into tokens on the way in; the parser turns generated text into structured calls on the way out. Each is a place where a good model can be made to look broken.</figcaption>
+</figure>
+
+<p>Failure point 1 degrades what the model <em>produces</em> (it never saw the tools, or saw them in a foreign format). Failure point 2 discards what the model <em>produced</em> (correct payload, unrecognized wrapper). The two look identical from the outside — the benchmark just reads 0 — which is exactly why you have to read raw outputs to tell them apart. More on that below.</p>
+
+<p>Two serving paths recur in this article. Path A is llama.cpp running the GGUF (llama.cpp's model file format) on the board's CPU with <code>--jinja</code>, which applies the model's own native chat template — my reference path. Path B is the compiled route: W4A16 (4-bit weights, 16-bit activations) context binaries running on the NPU, served either by my own shim or by GenieX, Qualcomm's umbrella runtime (developer preview as of August 2026) with two backends, <code>qairt</code> for compiled bundles and <code>llama_cpp</code> for GGUFs.</p>
+
+<h2 id="benchmark">The benchmark, briefly</h2>
+
+<p>All numbers come from the same harness: 65 tool-calling cases in four difficulty levels (status queries, enable/disable actions, single-parameter changes, multi-parameter changes) against a managed PoE (Power over Ethernet) switch's tool schemas. Grading is tiered — right tool, right command, right parameters (lenient and strict), right device — and "e2e" (end to end) means all of them at once. Temperature 0. The suite is stable: three fully shuffled orderings of the production configuration scored an identical 96.9% (measured), and run-to-run flips across otherwise-healthy configurations are one or two cases (~2–3 points). So the swings below are not noise: the observed serving-path swings are 36 to 100 points, an order of magnitude above the flip behavior.</p>
+
+<h2 id="ladder">The ladder</h2>
+
+<div class="tablewrap">
+<table>
+<thead><tr><th>Rung</th><th>Model</th><th>Weaker serving path</th><th class="num">Score</th><th>Stronger serving path</th><th class="num">Score</th></tr></thead>
+<tbody>
+<tr><td class="name">1</td><td>Gemma-4-E4B</td><td>GenieX <code>qairt</code>, compiled NPU</td><td class="num loss">0%</td><td>llama.cpp CPU, native template</td><td class="num pass">100%</td></tr>
+<tr><td class="name">2</td><td>Qwen3-4B (base)</td><td>GenieX <code>qairt</code>, compiled NPU</td><td class="num loss">24.6%¹</td><td>llama.cpp CPU, native template</td><td class="num pass">100%</td></tr>
+<tr><td class="name">3</td><td>Llama-3.1-8B</td><td>July-era shim, NPU</td><td class="num loss">55%²</td><td>llama.cpp CPU, native template</td><td class="num pass">90.8%</td></tr>
+<tr><td class="name">4</td><td>Qwen3-4B-2507</td><td>GenieX v0.3.17-alpha, same bundle</td><td class="num loss">no structured calls³</td><td>GenieX v0.3.19, same bundle</td><td class="num pass">93.8%</td></tr>
+</tbody>
+</table>
+</div>
+<p class="fn">¹ 10.8% as served natively; 24.6% after re-scoring with a tolerant parser. ² n=20, Level-1 cases only. ³ Probe-level observation, not a full bench run.</p>
+
+<p>Each rung has a different failure signature, and each signature teaches something different about the two failure points.</p>
+
+<h3>Rung 1: Gemma-4-E4B — 0% and 100%, both failure points at once</h3>
+
+<p>This is the war story.</p>
+
+<p><strong>Symptom.</strong> Mid-August 2026, a compiled W4A16 Gemma-4-E4B bundle for the QCS9075 appeared in Qualcomm's AI Hub catalog (<code>geniex_qairt</code> runtime only). This mattered because Gemma-4-E4B had already scored 100% on my suite via llama.cpp on a CPU — the first model to do so. After working through an unrelated registration bug (a truncated download that the cache accepted as complete — its own story, told elsewhere), the bundle served stably on the NPU. The bench run: 0% e2e, 0% tool selection. Zero for 65. Median latency 3.2 s, so the model was generating fluently. It just never made a tool call the runtime recognized.</p>
+
+<p><strong>Hypotheses.</strong> Either the model can't tool-call at this quantization (weights), the tools never reach it (failure point 1), or its calls are emitted but dropped (failure point 2).</p>
+
+<p><strong>Instrument.</strong> The bench harness stores every raw completion. Reading them settles it in minutes. Three real outputs from the 0% run (measured):</p>
+
+<pre><code>&lt;|tool_call&gt;call: "show_all_ports_status"
+{"tool_call": "show_port_status", "port_id": "5"}
+{"tool_call": "show_system_info"}</code></pre>
+
+<p><strong>Evidence.</strong> Two observations. First, the model is <em>trying</em> to call tools — but it invents tool names. <code>show_all_ports_status</code> is a command name in my nested schema, not a tool; the correct call is <code>query_device_info</code> with <code>command_name: "show_all_ports_status"</code>. A model that scored 100% on this exact nested schema through llama.cpp does not suddenly forget the schema exists — unless it never saw it. That is failure point 1. Second, even the malformed attempts (<code>{"tool_call": ...}</code>, <code>&lt;|tool_call&gt;</code>-prefixed lines) are never converted into structured <code>tool_calls</code> — that is failure point 2. On some cases it produced prose asking for confirmation instead, which is what a tool-trained model does when it knows tools exist in principle but has no schemas in front of it.</p>
+
+<p><strong>Fix.</strong> I reported both to the GenieX maintainer with the 0-vs-100 evidence. The maintainer confirmed two distinct bugs (documented): the tool definitions were being dropped before reaching the <code>qairt</code> Gemma-4 chat template, and Gemma-4's tool-call output format wasn't parsed into structured <code>tool_calls</code>. Both failure points, independently broken, for one model, in one runtime version. Fixes are in a pull request; an alpha build (v0.4.1-alpha.2) is published for retest. My Gemma-4 NPU retest is in progress — treat all Gemma-4-on-NPU numbers as pending as of August 2026.</p>
+
+<p><strong>Lesson.</strong> A model scored 0% for 65 consecutive cases and the model was not the problem either time. If I had benched Gemma-4 only through the compiled path — the natural thing to do, since the NPU is the deployment target — I would have concluded "Gemma-4 can't tool-call at 4-bit" and moved on. That conclusion would have been wrong by 100 points.</p>
+
+<p>One latency footnote for honesty: the 100% llama.cpp run's 2.4 s median was measured on a 20-core dev host, not board silicon. It's a capability number, not a deployment latency.</p>
+
+<h3>Rung 2: base Qwen3-4B — correcting my own July conclusion</h3>
+
+<p>This rung is a public correction, which the ladder demands I make.</p>
+
+<p>In July I tested the base (non-instruct, April-2025) Qwen3-4B as a compiled NPU bundle under GenieX v0.3.17-alpha, hoping its cleaner token handling would let me drop a client-side adapter. It scored 10.8% e2e served natively. The model omitted the <code>&lt;tool_call&gt;</code> wrapper tag about 60% of the time, emitting bare JSON that GenieX's tag-requiring parser silently dropped (failure point 2). Re-scoring the captured outputs with a tag-agnostic parser recovered those — 24.6%. Still far below production. The failure signature in the remaining misses: the model flattened command names into tool names, calling <code>show_poe_status</code> or <code>configure_trunk_allowed_vlans</code> as if they were top-level tools and often omitting <code>command_name</code> entirely.</p>
+
+<p>My July conclusion, written in the experiment log: base Qwen3-4B has structurally weak nested-schema adherence; the 2507-Instruct update fixed exactly this; the experiment re-validates the production model choice. It was a tidy conclusion. It fit the data. It even had a mechanism.</p>
+
+<p>In August I ran the same base model through llama.cpp on the board's CPU with its native chat template, same 65 cases, same nested schema: <strong>100%</strong> (65/65, strict parameters included — measured).</p>
+
+<p>So the July conclusion was chiefly a serving artifact. The "structural" nested-schema weakness disappears when the model is served through the template it was trained on. What I had actually measured in July was: <em>base Qwen3-4B degrades badly when the prompt format deviates from its training template, and the compiled-path serving of that era deviated.</em> That is a real and useful finding — instruct-tuned models tolerate template drift better than base models (inferred from this pair plus rung 3) — but it is a different finding from "this model can't follow nested schemas."</p>
+
+<p>The July decision itself survives: 24.6% through the deployment path is disqualifying regardless of the cause, and the production model still wins. But the <em>reasoning</em> was wrong, and reasoning is what transfers to the next decision. A 75-point serving swing was hiding inside a conclusion about model quality.</p>
+
+<h3>Rung 3: Llama-3.1-8B — 55% vs 90.8%, the partial version</h3>
+
+<p>Not every rung is 0-or-100. In July, Llama-3.1-8B scored 90.8% e2e through llama.cpp's native template (measured, full 65 cases) and 55% through my then-current shim's NPU path (measured, n=20, Level-1 cases only — a screening run, so treat the number as coarse). The signature is the diagnostic part: tool selection stayed at 90% while e2e fell to 55%. The model was picking the right tool and then failing on format — the reading I take from that signature (inferred, not instrumented at the time) is that my shim's hand-rolled Llama templating mangled the native tool-call format enough to corrupt arguments, not enough to destroy intent.</p>
+
+<p>This is what a <em>partially</em> wrong serving path looks like: not a cliff, a 36-point tax, concentrated in the strictest grading tiers. It is also the most dangerous kind, because 55% looks like "mediocre model" rather than "broken plumbing," and nothing about the score invites you to check the plumbing.</p>
+
+<h3>Rung 4: same model, same bundle, different runtime version</h3>
+
+<p>The cleanest control in the ladder: production Qwen3-4B-Instruct-2507, one compiled W4A16 bundle, byte-identical weights, across GenieX versions.</p>
+
+<p>Under v0.3.17-alpha, structured tool calls never populated (probe-level observation, not a full bench). The cause is documented in earlier articles: the quantized model's <code>&lt;tool_call&gt;</code> special token gets corrupted by the detokenizer into garbage text — Qualcomm inspected the logits and confirmed it is quantization-induced — and the version's parser required the literal tag it would never see. Correct JSON payload, discarded wrapper: failure point 2 in its purest form.</p>
+
+<p>Under v0.3.19, whose parser scans for balanced JSON instead of trusting the tag (a fix merged as GenieX PR #1298, an approach my bug reports proposed — documented): <strong>93.8% e2e / 96.9% tool selection / 7.25 s median</strong> on the same bundle (measured). The model didn't change. The weights didn't change. The parser learned to tolerate a mangled wrapper, and the score went from nothing to production-grade.</p>
+
+<p>For completeness, here is the same model across every serving/device combination I've measured, since it also bounds how much the serving path moves a <em>working</em> configuration:</p>
+
+<div class="tablewrap">
+<table>
+<thead><tr><th>Serving path</th><th>Board / OS</th><th class="num">e2e</th><th class="num">tool-select</th><th class="num">median</th></tr></thead>
+<tbody>
+<tr><td class="name">My shim</td><td>old EVK, Qualcomm Linux 1.5</td><td class="num">96.9%</td><td class="num">100%</td><td class="num">6.7 s</td></tr>
+<tr><td class="name">GenieX v0.3.19 native</td><td>old EVK, Qualcomm Linux 1.5</td><td class="num">93.8%</td><td class="num">96.9%</td><td class="num">7.25 s</td></tr>
+<tr><td class="name">My shim</td><td>new EVK, Qualcomm Linux 2.0</td><td class="num">93.8%</td><td class="num">98.5%</td><td class="num">8.3 s</td></tr>
+<tr><td class="name">GenieX v0.4.0 native</td><td>new EVK, Qualcomm Linux 2.0</td><td class="num">92.3%</td><td class="num">100%</td><td class="num">9.5 s</td></tr>
+<tr><td class="name">GenieX v0.4.0 native</td><td>new EVK, Qualcomm Linux 1.6</td><td class="num">92.3%</td><td class="num">100%</td><td class="num">7.3 s</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>(All measured; the latency spread between OS versions is a memory-bandwidth story for another article.) Once every path renders the template faithfully and parses tolerantly, the same quantized model lives in a 92–97% band. The individual flips are instructive at this scale too: in one run, a case the model answered correctly emitted an unusual flat <code>{"command": ...}</code> shape that the parser dropped — a one-case echo of rung 4's mechanism, inside an otherwise healthy path.</p>
+
+<p>So the full dynamic range: a broken serving path costs 36 to 100 points; the residual differences between <em>correct</em> serving paths cost about 5. The serving path is not a rounding error on model choice. On this evidence it is the larger variable.</p>
+
+<h2 id="counterpoint">The counterpoint: schema shape measured as a non-factor</h2>
+
+<p>When tool-calling accuracy disappoints, the first thing most people redesign is the tool schema. My schema is an obvious suspect: it nests commands inside wrapper tools (4 tools, each with a <code>command_name</code> parameter) instead of exposing each command as its own tool. Rung 2's July reading — "base models can't handle nesting" — pointed the same way. So I tested it directly: the nested 4-tool schema versus a flattened variant where each command is its own top-level tool (25 tools), both served through the identical llama.cpp CPU path so that serving is held constant (measured, August 2026):</p>
+
+<div class="tablewrap">
+<table>
+<thead><tr><th>Model</th><th class="num">Nested (4 tools)</th><th class="num">Flat (25 tools)</th></tr></thead>
+<tbody>
+<tr><td class="name">Qwen3-4B-2507</td><td class="num">96.9%</td><td class="num">98.5%</td></tr>
+<tr><td class="name">Qwen3-4B (base)</td><td class="num">100%</td><td class="num">96.9%</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>No effect. The differences are one to two cases, in opposite directions for the two models — indistinguishable from the run-to-run flip behavior documented above. The variable everyone reaches for first moved the needle roughly 2 points in no consistent direction; the variable almost nobody varies moved it up to 100. I keep this table next to the ladder because the contrast <em>is</em> the finding: intuition ranks schema design far above serving plumbing, and measurement ranks them the other way around by more than an order of magnitude.</p>
+
+<p>(Scope note, inferred: this null result is two models on one suite with well-matched templates. Schema design plausibly matters more at larger tool counts, longer schemas, or through a serving path that renders schemas poorly — which would, again, be the serving path talking.)</p>
+
+<h2 id="methodology">The methodology this forces</h2>
+
+<p>Two rules, both cheap, both of which I now follow without exception.</p>
+
+<p><strong>Rule 1: bench every model through at least two serving paths before judging it.</strong> One of them should be the model's reference path — llama.cpp with <code>--jinja</code>, or the vendor's own reference server — because that is the closest you can get to the template the model was trained on. If the two paths agree, you've learned about the model. If they disagree, you've learned about a serving path, and the higher score is the better estimate of model capability.</p>
+
+<p><strong>Rule 2: read raw outputs before blaming the model.</strong> Every failure signature in this article was legible in the raw text within minutes: invented tool names (tools never reached the model), missing wrapper tags (parser dropped valid payloads), correct tool with mangled arguments (template drift). A benchmark score compresses all of these into one indistinguishable number.</p>
+
+<p>The triage order, as a procedure:</p>
+
+<figure>
+<svg viewBox="0 0 760 540" role="img" aria-label="Triage flowchart. Start from a low tool-calling score and read the raw completions. If a valid JSON payload is present with only the wrapper or format off, suspect the parser and re-score with a tolerant parser. Otherwise check whether the rendered prompt matches the model's reference template; if not, suspect the template and bench the reference path; if it does, suspect the model. If a re-score or the reference path recovers the score, it is a serving-path defect: file the bug with evidence. If not, suspect the model.">
+<defs><marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5 0 10z" fill="currentColor"/></marker></defs>
+<rect class="box" x="40" y="16" width="280" height="44" rx="5"/>
+<text x="180" y="43" text-anchor="middle">Low tool-calling score</text>
+<rect class="box" x="40" y="92" width="280" height="44" rx="5"/>
+<text class="b" x="180" y="119" text-anchor="middle">Read the raw completions</text>
+<rect class="dec" x="40" y="168" width="280" height="64" rx="5"/>
+<text x="180" y="196" text-anchor="middle">Valid JSON payload present,</text>
+<text x="180" y="214" text-anchor="middle">wrapper or format off?</text>
+<rect class="box" x="420" y="168" width="300" height="64" rx="5"/>
+<text class="b" x="570" y="196" text-anchor="middle">Suspect the parser</text>
+<text class="s" x="570" y="214" text-anchor="middle">re-score with a tolerant parser</text>
+<rect class="dec" x="40" y="272" width="280" height="64" rx="5"/>
+<text x="180" y="300" text-anchor="middle">Rendered prompt matches the</text>
+<text x="180" y="318" text-anchor="middle">model's reference template?</text>
+<rect class="box" x="420" y="272" width="300" height="64" rx="5"/>
+<text class="b" x="570" y="300" text-anchor="middle">Suspect the template</text>
+<text class="s" x="570" y="318" text-anchor="middle">bench the reference path</text>
+<rect class="dec" x="420" y="380" width="300" height="44" rx="5"/>
+<text x="570" y="407" text-anchor="middle">Score recovers?</text>
+<rect class="end" x="420" y="470" width="300" height="56" rx="5"/>
+<text class="b" x="570" y="493" text-anchor="middle">Serving-path defect</text>
+<text class="s" x="570" y="511" text-anchor="middle">file the bug with evidence</text>
+<rect class="box" x="40" y="470" width="280" height="56" rx="5"/>
+<text class="b" x="180" y="502" text-anchor="middle">Now suspect the model</text>
+<line class="flow" x1="180" y1="60" x2="180" y2="90" marker-end="url(#ar2)"/>
+<line class="flow" x1="180" y1="136" x2="180" y2="166" marker-end="url(#ar2)"/>
+<line class="flow" x1="320" y1="200" x2="418" y2="200" marker-end="url(#ar2)"/>
+<text class="lbl" x="369" y="193" text-anchor="middle">yes</text>
+<line class="flow" x1="180" y1="232" x2="180" y2="270" marker-end="url(#ar2)"/>
+<text class="lbl" x="188" y="256">no</text>
+<line class="flow" x1="320" y1="304" x2="418" y2="304" marker-end="url(#ar2)"/>
+<text class="lbl" x="369" y="297" text-anchor="middle">no</text>
+<line class="flow" x1="180" y1="336" x2="180" y2="468" marker-end="url(#ar2)"/>
+<text class="lbl" x="188" y="360">yes</text>
+<polyline class="flow" points="720,200 742,200 742,402 722,402" marker-end="url(#ar2)"/>
+<line class="flow" x1="570" y1="336" x2="570" y2="378" marker-end="url(#ar2)"/>
+<line class="flow" x1="570" y1="424" x2="570" y2="468" marker-end="url(#ar2)"/>
+<text class="lbl" x="578" y="450">yes</text>
+<polyline class="flow" points="420,402 180,402"/>
+<text class="lbl" x="300" y="395" text-anchor="middle">no</text>
+</svg>
+<figcaption><span class="figno">Figure 2.</span> The triage order. The cheap checks come first, and "the model is bad" is the last conclusion allowed.</figcaption>
+</figure>
+
+<p>The order matters because the cheap checks come first and the expensive conclusion — "the model is bad" — comes last. In four out of four rungs on this project, the expensive conclusion was the wrong one. And the evidence you gather on the way is exactly what a runtime maintainer needs: my 0-vs-100 tables, with raw outputs attached, turned into confirmed bugs and merged fixes rather than a shrug.</p>
+
+<p>There's a third practice implied by rung 4: <strong>re-run the bench after every runtime upgrade, even when the model is untouched.</strong> A serving stack in developer preview changes monthly (as of August 2026, GenieX has moved through v0.3.17-alpha, v0.3.19, v0.4.0, and v0.4.1-alpha.2 in my logs), and each version is, in effect, a different serving path.</p>
+
+<h2 id="leaderboards">What this means for eval leaderboards</h2>
+
+<p>Every public tool-calling leaderboard number is a (model, serving path) measurement wearing a (model) label. For cloud models this is mostly harmless — the vendor controls the one serving path everyone uses, and it's the same one you'll deploy against. For open-weight models it is not harmless at all: the score depends on which runtime the eval harness used, which template that runtime shipped for that model that month, and how tolerant its parser is. Rung 1 is the existence proof: there is a runtime through which Gemma-4-E4B "scores" 0%, and a same-week runtime through which it scores 100%, and nothing on a leaderboard distinguishes them.</p>
+
+<p>The practical reading, inferred but I'd defend it: for open-weight models, treat any tool-calling score whose serving stack isn't specified — runtime, version, template source, parser behavior — as unverifiable. And treat <em>low</em> scores with more suspicion than high ones. A high score proves the model and the path both work. A low score proves only their conjunction fails, and this article is four demonstrations that the path is the more likely culprit. On-device deployments compound this: quantization can corrupt the very special tokens the parser keys on (documented — Qualcomm confirmed the mechanism is quantization-induced, with no current fix), so the parser's tolerance becomes part of the model's effective accuracy.</p>
+
+<p>The through-line of this series holds here too. An NPU doesn't run "a model" — it runs operations, fed by a template and read back through a parser. Everything in this article follows from taking the second half of that sentence as seriously as the first.</p>
+
+<h2 id="principles">Transferable principles</h2>
+
+<ul>
+<li>A tool-calling benchmark score is a property of a (model, serving path) pair. Never attribute it to the model until two paths agree.</li>
+<li>Bench through the model's reference template (llama.cpp <code>--jinja</code> or equivalent) before any custom or vendor path. The best score across paths is your capability estimate; the deployment path's score is your product number.</li>
+<li>Read raw completions before concluding anything. Invented tool names mean the tools never arrived; intact JSON with a wrong wrapper means the parser dropped it; right tool with wrong arguments means template drift.</li>
+<li>Partial serving damage (rung 3's 36-point tax) is more dangerous than total damage, because it impersonates a mediocre model instead of announcing a broken path.</li>
+<li>Write parsers tag-agnostic: scan for balanced JSON, don't trust wrapper tokens. Quantization can corrupt exactly the special tokens you'd anchor on.</li>
+<li>Re-bench after every runtime upgrade. A new runtime version is a new serving path.</li>
+<li>Schema shape (nested vs flat) measured as a non-factor here — spend redesign effort on the serving path first, schema aesthetics later.</li>
+<li>Base models tolerated template drift worse than instruct-tuned ones in the pairs measured here (inferred from two model pairs, not a general law); a base model's bad score through a nonstandard path says almost nothing about its ceiling.</li>
+</ul>
+
+<h2 id="current">Current as of</h2>
+
+<div class="note">
+<p>August 2026. Board: Qualcomm QCS9075 / Dragonwing IQ-9075 EVK. QAIRT 2.45.0.260326; GenieX developer preview v0.3.17-alpha → v0.3.19 → v0.4.0, with v0.4.1-alpha.2 published for the Gemma-4 retest (pending); Qualcomm Linux 1.5, 1.6, and 2.0-Ver1.0; llama.cpp 2026 Snapdragon-Linux builds (Hexagon backend merged upstream; CPU path used here). Production: Qwen3-4B-Instruct-2507, W4A16, 4K context, served natively by GenieX v0.4.0 on Qualcomm Linux 1.6. All benchmark figures reproducible from named result files in the project's <code>bench/results/</code> directory. Gemma-4-E4B NPU numbers are pending the v0.4.1-alpha.2 retest and should be treated as provisional.</p>
+</div>
+
+<footer class="colophon">Published 21 September 2026. Confidence labels in the text: measured, documented, inferred. <a href="../../">Home</a></footer>
+</div>
+</body>
+</html>
