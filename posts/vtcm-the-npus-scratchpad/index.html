@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VTCM, the NPU's scratchpad</title>
+<style>
+  :root {
+    --bg: #ffffff; --fg: #1a1d23; --muted: #5a6270; --accent: #0b6e4f;
+    --qc: #3253dc; --border: #d8dde4; --loss: #b5382e;
+    --code-bg: #f3f5f8; --surface: #ffffff; --surface-2: #f3f5f8;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1216; --fg: #e6e9ee; --muted: #9aa4b2; --accent: #4dd2a5;
+      --qc: #8fa6ff; --border: #2a323c; --loss: #ea7d71;
+      --code-bg: #161b22; --surface: #141920; --surface-2: #1a2028;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 17px/1.65 -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  }
+  main { max-width: 720px; margin: 0 auto; padding: 2.5rem 1.25rem 4rem; }
+  h1 { font-size: 1.7rem; line-height: 1.25; margin: 0 0 .25rem; }
+  h2 { font-size: 1.25rem; margin: 2.2rem 0 .6rem; padding-top: .9rem; border-top: 1px solid var(--border); }
+  h3 { font-size: 1.05rem; margin: 1.8rem 0 .4rem; }
+  .subtitle { color: var(--muted); margin: 0 0 1.25rem; }
+  .abstract {
+    margin: 0 0 2rem; padding: .9rem 1.1rem; background: var(--surface-2);
+    border-left: 3px solid var(--accent); border-radius: 0 8px 8px 0;
+  }
+  .abstract p { margin: 0; }
+  p { margin: .8rem 0; }
+  a { color: var(--qc); }
+  ul, ol { padding-left: 1.4rem; }
+  li { margin: .35rem 0; }
+  code { font-family: var(--mono); font-size: .88em; font-variant-ligatures: none; font-feature-settings: "liga" 0, "calt" 0; }
+  p code, li code, td code { background: var(--code-bg); padding: .05em .3em; border-radius: 3px; }
+  pre {
+    background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px;
+    padding: .8rem 1rem; overflow-x: auto; font-family: var(--mono); font-size: .85rem; line-height: 1.55;
+    font-variant-ligatures: none; font-feature-settings: "liga" 0, "calt" 0;
+  }
+  pre code { font-size: 1em; }
+  .tablewrap { overflow-x: auto; margin: 1rem 0 1.25rem; }
+  table { border-collapse: collapse; width: 100%; font-size: .93rem; line-height: 1.45; font-variant-numeric: tabular-nums; }
+  thead th {
+    text-align: left; font-size: .76rem; letter-spacing: .05em; text-transform: uppercase; color: var(--muted);
+    padding: .45rem .75rem .45rem 0; border-bottom: 1px solid var(--fg); white-space: nowrap;
+  }
+  tbody td { vertical-align: top; padding: .5rem .75rem .5rem 0; border-bottom: 1px solid var(--border); }
+  tbody tr:last-child td { border-bottom: 1px solid var(--fg); }
+  th.num, td.num { text-align: right; }
+  th:last-child, td:last-child { padding-right: 0; }
+  td.name { font-weight: 600; white-space: nowrap; }
+  .loss { color: var(--loss); font-weight: 600; }
+  .pass { color: var(--accent); font-weight: 600; }
+  .fn { font-size: .85rem; color: var(--muted); margin: -.5rem 0 1.2rem; }
+  figure {
+    margin: 1.5rem 0; padding: .75rem .75rem .5rem; background: var(--surface);
+    border: 1px solid var(--border); border-radius: 10px;
+  }
+  figure svg { width: 100%; height: auto; display: block; color: var(--fg); }
+  figcaption { font-size: .88rem; color: var(--muted); margin-top: .6rem; line-height: 1.5; }
+  figcaption .figno { font-weight: 600; color: var(--fg); }
+  svg text { font-size: 12.5px; fill: currentColor; font-family: inherit; }
+  svg text.h { font-weight: 600; font-size: 13px; }
+  svg text.b { font-weight: 600; }
+  svg text.s { fill: var(--muted); font-size: 11.5px; }
+  svg text.mono { font-family: var(--mono); font-size: 11px; }
+  svg text.tag { fill: var(--accent); font-family: var(--mono); font-size: 9.5px; letter-spacing: .08em; }
+  svg text.lbl { fill: var(--muted); font-size: 11px; }
+  svg .lane { fill: var(--surface-2); stroke: var(--border); stroke-width: 1; }
+  svg .fp, svg .dec { fill: var(--surface); stroke: var(--accent); stroke-width: 1.5; }
+  svg .box { fill: var(--surface-2); stroke: var(--border); stroke-width: 1; }
+  svg .end { fill: var(--surface-2); stroke: var(--accent); stroke-width: 1.5; }
+  svg .flow { fill: none; stroke: currentColor; stroke-width: 1.5; }
+  .update { margin: 0 0 1.5rem; font-size: .95rem; color: var(--muted); }
+  .sources li { margin: .5rem 0; }
+  .sources b { font-weight: 600; }
+</style>
+</head>
+<body>
+<main>
+<p style="margin:0 0 1.5rem"><a href="../../" style="color:var(--muted);text-decoration:none;font-size:.9rem">&#8592; home</a></p>
+
+<h1>VTCM, the NPU's scratchpad</h1>
+<p class="subtitle">8 MB of on-chip SRAM that the compiler plans by hand. It is a large part of why compiled NPU models are fast, and it decides whether two models can share the chip.</p>
+
+<div class="abstract">
+<p>This post explains one part of the Hexagon NPU that no spec sheet lists and no public document explains well: VTCM, the small software-managed memory that the vector and matrix engines are fed from. It covers what VTCM is, why it is not a cache, what contention for it looks like, how it differs from the NPU's other memory wall, and where this level of detail can be found in public. The measured size and the profiling observations are from a Qualcomm QCS9075 on the Dragonwing IQ-9075 EVK, Hexagon v73. A longer article on the NPU's whole memory hierarchy is planned; this is its first section.</p>
+</div>
+
+<h2 id="what">What VTCM is</h2>
+
+<p>Running an LLM on a phone-class NPU means the model is compiled ahead of time into a fixed graph for the accelerator. On Qualcomm's Hexagon NPU, one small number ends up deciding a lot: the size of an on-chip memory called VTCM. On a QCS9075 board it is 8 MB. The chip reports it directly: threads 4, HVX 4, HMX 1, VTCM 8 MB.</p>
+
+<p>VTCM (Vector Tightly Coupled Memory) is a block of SRAM inside the NPU, next to the vector and matrix engines. Those engines are so fast that board DRAM cannot feed them; data has to already be on-chip when an instruction wants it. VTCM is the staging area. DMA engines stream tiles of weights and activations from DRAM into VTCM, the engines process them at full speed, results stream back out. 8 MB holds the working tiles of a layer computation, not a model. Even a small LLM's weights are hundreds of times larger, so everything streams through this window.</p>
+
+<figure>
+<svg viewBox="0 0 760 260" role="img" aria-label="One compute DSP of the Hexagon NPU. Board DRAM streams tiles over DMA into the 8 MB VTCM, and the HVX vector engines and the HMX matrix engine are fed only from VTCM. Results stream back out to DRAM.">
+<defs><marker id="ar3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5 0 10z" fill="currentColor"/></marker></defs>
+<rect class="box" x="20" y="90" width="190" height="80" rx="6"/>
+<text class="b" x="115" y="124" text-anchor="middle">Board DRAM</text>
+<text class="s" x="115" y="144" text-anchor="middle">gigabytes, slow</text>
+<rect class="fp" x="290" y="76" width="210" height="108" rx="6"/>
+<text class="tag" x="302" y="94">ON-CHIP</text>
+<text class="b" x="302" y="116">VTCM</text>
+<text class="s" x="302" y="134">8 MB SRAM, software-managed</text>
+<text class="s" x="302" y="150">the compiler plans its tiles</text>
+<text class="s" x="302" y="166">at each step</text>
+<rect class="box" x="580" y="56" width="160" height="56" rx="6"/>
+<text class="b" x="660" y="80" text-anchor="middle">HVX ×4</text>
+<text class="s" x="660" y="98" text-anchor="middle">vector engines</text>
+<rect class="box" x="580" y="148" width="160" height="56" rx="6"/>
+<text class="b" x="660" y="172" text-anchor="middle">HMX ×1</text>
+<text class="s" x="660" y="190" text-anchor="middle">matrix engine</text>
+<line class="flow" x1="210" y1="112" x2="288" y2="112" marker-end="url(#ar3)"/>
+<text class="lbl" x="249" y="104" text-anchor="middle">DMA in: tiles</text>
+<line class="flow" x1="290" y1="150" x2="212" y2="150" marker-end="url(#ar3)"/>
+<text class="lbl" x="250" y="170" text-anchor="middle">DMA out: results</text>
+<line class="flow" x1="500" y1="106" x2="578" y2="86" marker-end="url(#ar3)"/>
+<line class="flow" x1="500" y1="154" x2="578" y2="174" marker-end="url(#ar3)"/>
+<text class="lbl" x="540" y="136" text-anchor="middle">fed only</text>
+<text class="lbl" x="540" y="150" text-anchor="middle">from VTCM</text>
+<text class="s" x="380" y="236" text-anchor="middle">one compute DSP; the QCS9075 has two, each with its own VTCM</text>
+</svg>
+<figcaption><span class="figno">Figure 1.</span> Everything streams through 8 MB. The engines are fed only from VTCM, and the compiler decides which tiles occupy it at each step.</figcaption>
+</figure>
+
+<h2 id="cache">Not a cache</h2>
+
+<p>The design property that matters: VTCM is not a cache. A cache manages itself invisibly. VTCM is a scratchpad managed by software: when a model is compiled for the NPU, the compiler plans exactly which tiles occupy which part of it at each step. That planning is a big part of why compiled models are fast. It also means every compiled model arrives with a claim on a specific slice of those 8 MB.</p>
+
+<h2 id="contention">Contention</h2>
+
+<p>Contention is what happens when resident models' claims exceed the space, and it shows up two ways. If the claims plainly do not fit, loading can fail outright. On this board it did: a fourth graph context refused to place while two serving stacks held copies of the same large model, for what looks like this reason. The runtime reports it only as a packing failure, and the NPU's per-domain DMA address space is the other candidate. If the claims fit only by taking turns, the NPU time-shares VTCM between workloads, and each handover costs DMA traffic before any useful compute resumes. That is what profiling showed on this board when a vision model and an LLM ran together: the NPU's compute was not saturated, and the contention was VTCM time-sharing. True partitioning, each model holding its own slice at the same time, is only supported from Hexagon v81; this board's v73 can only take turns. The symptom to expect is not an error but latency jitter: the LLM's per-token time stutters whenever the other model takes its turn.</p>
+
+<h2 id="walls">Two different walls</h2>
+
+<p>Worth separating from a different limit this board also has: the roughly one-gigabyte DMA mapping space, which is about how much board DRAM the NPU can have mapped at once in a compute domain. That is the wall the 8K-context KV cache in <a href="../context-window-8k/">the context-window post</a> had to clear. It is address space for the big slow memory; VTCM is the tiny fast memory. Two different walls, and two resident models can hit either, which is why the load failure above is attributed to VTCM only as the likelier cause.</p>
+
+<h2 id="dsps">Two compute DSPs</h2>
+
+<p>The QCS9075 has two compute DSPs, each with its own 8 MB pool. Pinning an LLM to one domain and a vision model to the other should remove most of the contention. "Should" is doing real work in that sentence: no published measurement seems to exist for an LLM agent and a vision pipeline sharing one edge NPU, which makes it worth measuring properly.</p>
+
+<p>For on-device AI, DRAM size gets the spec-sheet attention. Whether a model runs fast, and whether two can coexist, is decided megabytes at a time, on-chip.</p>
+
+<h2 id="sources">Where to read more</h2>
+
+<p>Public sources for this level of detail, best first. Links checked on 3 September 2026.</p>
+
+<ul class="sources">
+<li><b><a href="https://github.com/ggml-org/llama.cpp">llama.cpp, the Hexagon backend.</a></b> Open code that programs this NPU, and where the hardware-report line above comes from. Search the repository for "hexagon" or "VTCM". The most concrete public documentation that exists, better than any prose for seeing how VTCM is actually allocated and used.</li>
+<li><b><a href="https://developer.qualcomm.com/software/hexagon-dsp-sdk">Hexagon SDK.</a></b> HVX programming and the compute-resource APIs through which software requests VTCM. The documents ship inside the SDK download rather than on the web. This is the public boundary made visible: HVX is fully documented there, HMX is not.</li>
+<li><b><a href="https://docs.qualcomm.com/bundle/publicresource/topics/80-63442-50/introduction.html">AI Engine Direct (QNN, QAIRT) documentation.</a></b> The runtime level above: the HTP backend, performance modes, how graphs declare VTCM needs, and the device architecture versions. This chip is v73. Deep links on that site move; re-find it by searching for "AI Engine Direct SDK".</li>
+<li><b><a href="https://hotchips.org">Hot Chips archives.</a></b> Qualcomm's Hexagon NPU and Cloud AI 100 talks. The slides give the architecture rationale, why a software-managed scratchpad and how DMA overlaps compute, that the SDKs never explain.</li>
+<li><b><a href="https://aihub.qualcomm.com">AI Hub</a> and <a href="https://github.com/quic/ai-hub-models">ai-hub-models</a>.</b> The compile pipeline and the per-model recipe structure; what "supported architecture" concretely means for this NPU.</li>
+<li><b><a href="https://geniex.aihub.qualcomm.com">GenieX documentation.</a></b> The serving stack that runs compiled bundles and GGUFs on this board.</li>
+<li><b>arXiv.</b> No single stable link. Search "on-device LLM inference NPU" and the mllm-NPU line of work, which describes HTP internals from a practitioner's measurement perspective.</li>
+</ul>
+
+</main>
+</body>
+</html>
