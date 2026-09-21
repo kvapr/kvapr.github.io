@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>The serving path is the model</title>
+<title>The serving path is the model, revisited</title>
 <style>
   :root {
     --bg: #ffffff; --fg: #1a1d23; --muted: #5a6270; --accent: #0b6e4f;
@@ -83,17 +83,14 @@
 </head>
 <body>
 <main>
-
 <p style="margin:0 0 1.5rem"><a href="../../" style="color:var(--muted);text-decoration:none;font-size:.9rem">&#8592; home</a></p>
 
-<h1>The serving path is the model</h1>
-<p class="subtitle">Same weights, same benchmark, same 4-bit quantization class: 0% through one serving stack, 100% through another, and it happened four times, with four different failure signatures.</p>
+<h1>The serving path is the model, revisited</h1>
+<p class="subtitle">Same weights, same binary, one flag changed: the compute unit alters speed only, the compiled path costs six points, and two vendor fixes turned Gemma-4's failure from garbage into refusals.</p>
 
 <div class="abstract">
-<p>This post is about one measurement that changed how I evaluate small models for tool calling. Over the summer I ran several open-weight models through different serving stacks on a Qualcomm NPU and on a CPU, against the same 65-case benchmark. The same model scored 0% through one stack and 100% through another, and it happened four times, each with a different cause. The post walks through the four cases, shows that the tool-schema design most people blame first made no measurable difference, and ends with the checks I now run before blaming a model. Board: Qualcomm QCS9075 on the Dragonwing IQ-9075 EVK; models quantized to 4 bits; measurements from July and August 2026.</p>
+<p>In August I published a finding: a small model's tool-calling score belongs to the (model, serving path) pair, not to the model, because the same weights scored 0% through one serving stack and 100% through another, four times over. This is the updated version. It adds a controlled measurement the August version lacked: the same model file served by the same binary on the CPU and on the NPU, with only the compute flag changed. It adds two retests of the Gemma-4 bundle on the vendor's fixed runtime, which changed the failure but not the score. And it adds a repeatability check on the production configuration. The <a href="../serving-path-is-the-model/">August post</a> stays up as the record; this is the version to cite. Board: Qualcomm QCS9075 on the Dragonwing IQ-9075 EVK; models quantized to 4 bits; measurements from July to 10 September 2026.</p>
 </div>
-
-<p class="update">Updated 21 September 2026: a revised version with the September measurements is at <a href="../serving-path-is-the-model-revisited/">The serving path is the model, revisited</a>. This version stays as the August record.</p>
 
 <p>Start with the table that reorganized how I evaluate models.</p>
 
@@ -107,11 +104,11 @@
 </table>
 </div>
 
-<p>Both rows are measured, August 2026, on the same 65-case tool-calling suite with strict end-to-end grading — the 100% includes exact-key, type-faithful nested arguments. The model is identical. The quantization is the same 4-bit class. The prompts are identical. What changed is the serving path: how the request became tokens, and how the generated text became a structured tool call. (Strictly, the compute unit and the exact 4-bit scheme also differ between the rows — but the runtime maintainer later confirmed two serving bugs as the cause, which is why the attribution to the serving path is documented rather than inferred; the full story is in rung 1.)</p>
+<p>Both rows are measured on the same 65-case tool-calling suite with strict end-to-end grading, the 100% including exact-key, type-faithful nested arguments. The model is identical. The prompts are identical. What changed is the serving path: how the request became tokens, and how the generated text became a structured tool call. In August I had to add a caveat here: the compute unit and the exact 4-bit scheme also differ between the two rows. The compute unit is now off the list. In September the same GGUF file, served by the same binary, scored identically on the CPU and on the NPU. The 4-bit scheme still differs, and September also put a number on what it costs when the serving is correct on both sides: about six points, not a hundred. The full control is two sections down.</p>
 
-<p>If a model can score 0 and 100 on the same benchmark depending on how you serve it, then a tool-calling benchmark score is not a property of a model. It is a property of a (model, serving path) pair. This article is the evidence for that claim: a four-rung ladder of models I measured through at least two serving paths each, the failure signature at each rung, one null result about the thing people expect to matter (schema design — it didn't), and the methodology I now follow before blaming any model for anything.</p>
+<p>If a model can score 0 and 100 on the same benchmark depending on how you serve it, then a tool-calling benchmark score is not a property of a model. It is a property of a (model, serving path) pair. This article is the evidence for that claim: a controlled measurement with one variable changed, a four-rung ladder of models I measured through at least two serving paths each, the failure signature at each rung, one null result about the thing people expect to matter (schema design, which didn't), and the methodology I now follow before blaming any model for anything.</p>
 
-<p>Context for new readers: I run an intent-driven network-management agent fully offline on a Qualcomm QCS9075 (Dragonwing IQ-9075 EVK — evaluation kit). The language model runs on the board's Hexagon NPU (neural processing unit) as a compiled 4-bit bundle. Earlier articles cover the porting and benchmarking story; this one stands alone.</p>
+<p>Context for new readers: I run an intent-driven network-management agent fully offline on a Qualcomm QCS9075 (Dragonwing IQ-9075 EVK, an evaluation kit). The language model runs on the board's Hexagon NPU (neural processing unit) as a compiled 4-bit bundle. Earlier posts cover the porting and the context-window work; this one stands alone.</p>
 
 <h2 id="serving-path">What the serving path is</h2>
 
@@ -160,11 +157,49 @@
 
 <p>Failure point 1 degrades what the model <em>produces</em> (it never saw the tools, or saw them in a foreign format). Failure point 2 discards what the model <em>produced</em> (correct payload, unrecognized wrapper). The two look identical from the outside — the benchmark just reads 0 — which is exactly why you have to read raw outputs to tell them apart. More on that below.</p>
 
-<p>Two serving paths recur in this article. Path A is llama.cpp running the GGUF (llama.cpp's model file format) on the board's CPU with <code>--jinja</code>, which applies the model's own native chat template — my reference path. Path B is the compiled route: W4A16 (4-bit weights, 16-bit activations) context binaries running on the NPU, served either by my own shim or by GenieX, Qualcomm's umbrella runtime (developer preview as of August 2026) with two backends, <code>qairt</code> for compiled bundles and <code>llama_cpp</code> for GGUFs.</p>
+<p>Two serving paths recur in this article. Path A is llama.cpp running the GGUF (llama.cpp's model file format) on the board's CPU with <code>--jinja</code>, which applies the model's own native chat template — my reference path. Path B is the compiled route: W4A16 (4-bit weights, 16-bit activations) context binaries running on the NPU, served either by my own shim or by GenieX, Qualcomm's umbrella runtime (developer preview; versions from v0.3.17-alpha to v0.5.1-alpha.2 appear in this post) with two backends, <code>qairt</code> for compiled bundles and <code>llama_cpp</code> for GGUFs. September adds a third: the llama.cpp binary inside GenieX 0.5.1 can also run a GGUF on the NPU through llama.cpp's Hexagon backend, which is what makes the control possible.</p>
 
 <h2 id="benchmark">The benchmark, briefly</h2>
 
 <p>All numbers come from the same harness: 65 tool-calling cases in four difficulty levels (status queries, enable/disable actions, single-parameter changes, multi-parameter changes) against a managed PoE (Power over Ethernet) switch's tool schemas. Grading is tiered — right tool, right command, right parameters (lenient and strict), right device — and "e2e" (end to end) means all of them at once. Temperature 0. The suite is stable: three fully shuffled orderings of the production configuration scored an identical 96.9% (measured), and run-to-run flips across otherwise-healthy configurations are one or two cases (~2–3 points). So the swings below are not noise: the observed serving-path swings are 36 to 100 points, an order of magnitude above the flip behavior.</p>
+
+<p>In September I re-ran the production configuration five full times under a stricter harness, with a warm-up request and a board-temperature gate before each repetition. All five scored 92.3%, tool selection was 100% in each, and the per-case latency spread across repetitions had a median of 0.04 s. At temperature 0 this stack is deterministic, which makes the differences below easier to trust than they were in August.</p>
+
+<h2 id="control">The control: same weights, same binary, one flag</h2>
+
+<p>The August version attributed the 0-versus-100 swing to the serving path on documentary evidence: the runtime maintainer had confirmed two serving bugs. It could not rule out the compute unit by measurement, because every compiled-path number came from the NPU and every reference number came from a CPU. On 10 September I closed that gap.</p>
+
+<p>Setup: Qwen3-4B-Instruct-2507 as a Q4_0 GGUF file, served by one GenieX 0.5.1 binary that carries both a CPU backend and llama.cpp's Hexagon NPU backend. The two runs differ in one command-line flag. Same weights, same tokenizer, same chat template, same prompts, same harness, two full repetitions of the bench on each, and production stopped for the NPU leg so nothing else touched the accelerator. The production compiled path is the third row, measured the same afternoon under the same harness. It is a different 4-bit format, so it is a comparison, not part of the controlled pair.</p>
+
+<div class="tablewrap">
+<table>
+<thead><tr><th>Serving path</th><th class="num">e2e</th><th class="num">Tool selection</th><th class="num">Median turn</th></tr></thead>
+<tbody>
+<tr><td class="name">llama.cpp, CPU, Q4_0 GGUF</td><td class="num pass">98.5%</td><td class="num">100%</td><td class="num">52.5 s</td></tr>
+<tr><td class="name">llama.cpp, NPU (Hexagon backend), same GGUF, same binary</td><td class="num pass">98.5%</td><td class="num">100%</td><td class="num">14.5 s</td></tr>
+<tr><td class="name">GenieX compiled W4A16 bundle, NPU (production)</td><td class="num">92.3%</td><td class="num">100%</td><td class="num">7.4 s</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>The two GGUF rows did not just score the same. They produced the same answers, case for case, in both repetitions. The compute unit changed speed only.</p>
+
+<p>Where the speed comes from is the second table. Prefill is reading the prompt; decode is writing the answer. Five repetitions per row, run-to-run spread under one percent.</p>
+
+<div class="tablewrap">
+<table>
+<thead><tr><th>Prompt</th><th>CPU, llama.cpp: prefill / decode / first token</th><th>NPU, same binary</th><th>NPU, compiled bundle</th></tr></thead>
+<tbody>
+<tr><td class="name">259 tokens</td><td>73.9 / 17.1 tok/s / 3.5 s</td><td>358 / 12.1 / 0.7 s</td><td>716 / 16.1 / 0.4 s</td></tr>
+<tr><td class="name">2,044 tokens</td><td>60.4 / 13.4 / 33.8 s</td><td>386 / 7.9 / 5.3 s</td><td>1,020 / 13.1 / 2.0 s</td></tr>
+<tr><td class="name">2,795 tokens</td><td>53.2 / 10.9 / 53.0 s</td><td>369 / 7.0 / 7.6 s</td><td>not measured</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>The NPU reads prompts five to seven times faster than the CPU and writes answers about forty percent slower. An agent turn on this suite is about 2.7K tokens in and 50 out, so it is prefill-dominated, and the NPU turn is 3.6 times faster with the same binary. The compiled bundle is faster still, and it is the one that scores six points lower.</p>
+
+<p>Three things follow. First, the August caveat is closed: the compute unit is not a variable in tool-calling accuracy, so the 0-versus-100 swings on the ladder below are serving-path swings by measurement as well as by the maintainer's account. Second, the six-point gap between the compiled W4A16 bundle and the Q4_0 GGUF is a quantization or serving-format effect, on a path where the template and the parser are both correct. That gap is now the most interesting open question on the product side, because the compiled path is the fast one. Third, the fastest path and the most accurate path are different paths for the same weights, which the leaderboard section returns to.</p>
 
 <h2 id="ladder">The ladder</h2>
 
@@ -199,11 +234,21 @@
 
 <p><strong>Evidence.</strong> Two observations. First, the model is <em>trying</em> to call tools — but it invents tool names. <code>show_all_ports_status</code> is a command name in my nested schema, not a tool; the correct call is <code>query_device_info</code> with <code>command_name: "show_all_ports_status"</code>. A model that scored 100% on this exact nested schema through llama.cpp does not suddenly forget the schema exists — unless it never saw it. That is failure point 1. Second, even the malformed attempts (<code>{"tool_call": ...}</code>, <code>&lt;|tool_call&gt;</code>-prefixed lines) are never converted into structured <code>tool_calls</code> — that is failure point 2. On some cases it produced prose asking for confirmation instead, which is what a tool-trained model does when it knows tools exist in principle but has no schemas in front of it.</p>
 
-<p><strong>Fix.</strong> I reported both to the GenieX maintainer with the 0-vs-100 evidence. The maintainer confirmed two distinct bugs (documented): the tool definitions were being dropped before reaching the <code>qairt</code> Gemma-4 chat template, and Gemma-4's tool-call output format wasn't parsed into structured <code>tool_calls</code>. Both failure points, independently broken, for one model, in one runtime version. Fixes are in a pull request; an alpha build (v0.4.1-alpha.2) is published for retest. My Gemma-4 NPU retest is in progress — treat all Gemma-4-on-NPU numbers as pending as of August 2026.</p>
+<p><strong>Fix.</strong> I reported both to the GenieX maintainer with the 0-vs-100 evidence. The maintainer confirmed two distinct bugs: the tool definitions were being dropped before reaching the <code>qairt</code> Gemma-4 chat template, and Gemma-4's tool-call output format wasn't parsed into structured <code>tool_calls</code>. Both failure points, independently broken, for one model, in one runtime version. The fixes arrived in alpha builds, and the retests are the second act below.</p>
 
 <p><strong>Lesson.</strong> A model scored 0% for 65 consecutive cases and the model was not the problem either time. If I had benched Gemma-4 only through the compiled path — the natural thing to do, since the NPU is the deployment target — I would have concluded "Gemma-4 can't tool-call at 4-bit" and moved on. That conclusion would have been wrong by 100 points.</p>
 
 <p>One latency footnote for honesty: the 100% llama.cpp run's 2.4 s median was measured on a 20-core dev host, not board silicon. It's a capability number, not a deployment latency.</p>
+
+<h3>Rung 1, second act: what the fixes uncovered</h3>
+
+<p>The first alpha with the fixes, v0.4.1-alpha.2, arrived on 21 August. On short prompts both fixes held: a 996-token prompt returned a correct structured tool call. At 1,024 prompt tokens and above the output corrupted again, with literal special tokens in the text, and nothing but the prompt length had changed between 996 and 1,024. The server also ignored the <code>max_tokens</code> cap, returning 1,295 tokens against a request for 512. The 65-case bench, whose prompts run about 2.8K tokens, stayed at 0 of 65. Both findings went back to the maintainer with one-request reproductions.</p>
+
+<p>The second alpha, v0.5.1-alpha.2, arrived on 9 September. The 1,024-token corruption was gone: prompts of 1,024, 1,080 and 1,192 tokens all returned a correct structured tool call. The cap was honored: a request for 64 tokens returned exactly 64. What remained was a boundary between 1,192 and 1,414 prompt tokens. Above it the model answers coherently, in clean text, in the right format, and does not call the tool. It asks for information that is already in the prompt: "I need to know the city name to use the get_weather tool." On the 65-case bench the failure mode was refusal prose at the easier levels and, at the hardest level, sometimes the correct call written out as a JSON block inside the reply rather than as a structured call. Median latency fell to 14.0 s, with no more two-minute rambles. Still 0 of 65. The maintainer's account is that this is an accuracy issue on the compiled path specific to Gemma-4, with other models unaffected, which matches what I measure on my production model through the same path.</p>
+
+<p>One side finding for anyone retesting: the 0.5.1 build enables thinking by default, where 0.4.1 did not. Turning it off fixes a token-budget failure on short prompts and does nothing to the long-prompt refusal; the two are independent.</p>
+
+<p><strong>Lesson.</strong> Rung 1 now has a third failure signature, and it is the one the August version did not have: clean, well-formed prose that declines to act. The first two signatures, invented tool names and unparsed wrappers, were plumbing, and the raw output said so. This one is not plumbing. The raw output is exactly what a working serving path delivers; the decision inside it is wrong. The triage below routes it correctly, to "suspect the model on this path". And the path still matters: the same Gemma-4 weights through llama.cpp score 100% on these prompts. So the score is still a property of the pair. What the fixes changed is which layer of the pair is failing, from the serving code to the compiled 4-bit path's accuracy at agent-length prompts. Gemma-4 stays off the compiled path here until that fix ships.</p>
 
 <h3>Rung 2: base Qwen3-4B — correcting my own July conclusion</h3>
 
@@ -233,7 +278,7 @@
 
 <p>Under v0.3.19, whose parser scans for balanced JSON instead of trusting the tag (a fix merged as GenieX PR #1298, an approach my bug reports proposed — documented): <strong>93.8% e2e / 96.9% tool selection / 7.25 s median</strong> on the same bundle (measured). The model didn't change. The weights didn't change. The parser learned to tolerate a mangled wrapper, and the score went from nothing to production-grade.</p>
 
-<p>For completeness, here is the same model across every serving/device combination I've measured, since it also bounds how much the serving path moves a <em>working</em> configuration:</p>
+<p>For completeness, here is the same model across every serving/device combination I've measured, since it also bounds how much the serving path moves a <em>working</em> configuration. The last three rows are the September additions.</p>
 
 <div class="tablewrap">
 <table>
@@ -244,13 +289,16 @@
 <tr><td class="name">My shim</td><td>new EVK, Qualcomm Linux 2.0</td><td class="num">93.8%</td><td class="num">98.5%</td><td class="num">8.3 s</td></tr>
 <tr><td class="name">GenieX v0.4.0 native</td><td>new EVK, Qualcomm Linux 2.0</td><td class="num">92.3%</td><td class="num">100%</td><td class="num">9.5 s</td></tr>
 <tr><td class="name">GenieX v0.4.0 native</td><td>new EVK, Qualcomm Linux 1.6</td><td class="num">92.3%</td><td class="num">100%</td><td class="num">7.3 s</td></tr>
+<tr><td class="name">GenieX v0.4.0 native, 5 repetitions</td><td>new EVK, Qualcomm Linux 1.6</td><td class="num">92.3% × 5</td><td class="num">100%</td><td class="num">7.4 s</td></tr>
+<tr><td class="name">llama.cpp CPU, Q4_0 GGUF</td><td>new EVK, Qualcomm Linux 1.6</td><td class="num">98.5%</td><td class="num">100%</td><td class="num">52.5 s</td></tr>
+<tr><td class="name">llama.cpp NPU, same GGUF, same binary</td><td>new EVK, Qualcomm Linux 1.6</td><td class="num">98.5%</td><td class="num">100%</td><td class="num">14.5 s</td></tr>
 </tbody>
 </table>
 </div>
 
-<p>(All measured; the latency spread between OS versions is a memory-bandwidth story for another article.) Once every path renders the template faithfully and parses tolerantly, the same quantized model lives in a 92–97% band. The individual flips are instructive at this scale too: in one run, a case the model answered correctly emitted an unusual flat <code>{"command": ...}</code> shape that the parser dropped — a one-case echo of rung 4's mechanism, inside an otherwise healthy path.</p>
+<p>(All measured; the latency spread between OS versions is a memory-bandwidth story for another article.) Once every path renders the template faithfully and parses tolerantly, the same model lives in a 92 to 98.5% band, and the September rows show where the spread inside that band comes from. The two GGUF rows agree with each other exactly. Both sit about six points above the compiled bundle. The individual flips are instructive at this scale too: in one run, a case the model answered correctly emitted an unusual flat <code>{"command": ...}</code> shape that the parser dropped — a one-case echo of rung 4's mechanism, inside an otherwise healthy path.</p>
 
-<p>So the full dynamic range: a broken serving path costs 36 to 100 points; the residual differences between <em>correct</em> serving paths cost about 5. The serving path is not a rounding error on model choice. On this evidence it is the larger variable.</p>
+<p>So the full dynamic range, now with the control: a broken serving path costs 36 to 100 points; the quantization format costs about six; the compute unit costs nothing. The serving path is not a rounding error on model choice. On this evidence it is the larger variable.</p>
 
 <h2 id="counterpoint">The counterpoint: schema shape measured as a non-factor</h2>
 
@@ -272,11 +320,13 @@
 
 <h2 id="methodology">The methodology this forces</h2>
 
-<p>Two rules, both cheap, both of which I now follow without exception.</p>
+<p>Three rules, all cheap, all of which I now follow without exception.</p>
 
 <p><strong>Rule 1: bench every model through at least two serving paths before judging it.</strong> One of them should be the model's reference path — llama.cpp with <code>--jinja</code>, or the vendor's own reference server — because that is the closest you can get to the template the model was trained on. If the two paths agree, you've learned about the model. If they disagree, you've learned about a serving path, and the higher score is the better estimate of model capability.</p>
 
-<p><strong>Rule 2: read raw outputs before blaming the model.</strong> Every failure signature in this article was legible in the raw text within minutes: invented tool names (tools never reached the model), missing wrapper tags (parser dropped valid payloads), correct tool with mangled arguments (template drift). A benchmark score compresses all of these into one indistinguishable number.</p>
+<p><strong>Rule 2: read raw outputs before blaming the model.</strong> Every failure signature in this article was legible in the raw text within minutes: invented tool names (tools never reached the model), missing wrapper tags (parser dropped valid payloads), correct tool with mangled arguments (template drift), and, since September, clean prose that declines to call anything (the model on this path). A benchmark score compresses all of these into one indistinguishable number.</p>
+
+<p><strong>Rule 3: when two paths disagree, change one thing at a time before attributing.</strong> The August version could say the serving path was the cause because the maintainer had confirmed the bugs. It could not say the compute unit was innocent, because no measurement held everything else constant. One afternoon with the same binary and one flag settled it. Whenever a runtime offers the same backend on two compute units, that pair is the cheapest control you will ever run.</p>
 
 <p>The triage order, as a procedure:</p>
 
@@ -323,12 +373,12 @@
 <polyline class="flow" points="420,402 180,402"/>
 <text class="lbl" x="300" y="395" text-anchor="middle">no</text>
 </svg>
-<figcaption><span class="figno">Figure 2.</span> The triage order. The cheap checks come first, and "the model is bad" is the last conclusion allowed.</figcaption>
+<figcaption><span class="figno">Figure 2.</span> The triage order. The cheap checks come first, and "the model is bad" is the last conclusion allowed. A clean refusal, well-formed text with no call, falls through to that last box: it is the model on this path.</figcaption>
 </figure>
 
 <p>The order matters because the cheap checks come first and the expensive conclusion — "the model is bad" — comes last. In four out of four rungs on this project, the expensive conclusion was the wrong one. And the evidence you gather on the way is exactly what a runtime maintainer needs: my 0-vs-100 tables, with raw outputs attached, turned into confirmed bugs and merged fixes rather than a shrug.</p>
 
-<p>There's a third practice implied by rung 4: <strong>re-run the bench after every runtime upgrade, even when the model is untouched.</strong> A serving stack in developer preview changes monthly (as of August 2026, GenieX has moved through v0.3.17-alpha, v0.3.19, v0.4.0, and v0.4.1-alpha.2 in my logs), and each version is, in effect, a different serving path.</p>
+<p>There's a fourth practice implied by rung 4: <strong>re-run the bench after every runtime upgrade, even when the model is untouched.</strong> A serving stack in developer preview changes monthly (between July and September 2026, GenieX moved through v0.3.17-alpha, v0.3.19, v0.4.0, v0.4.1-alpha.2 and v0.5.1-alpha.2 in my logs), and each version is, in effect, a different serving path.</p>
 
 <h2 id="leaderboards">What this means for eval leaderboards</h2>
 
@@ -336,19 +386,32 @@
 
 <p>The practical reading, inferred but I'd defend it: for open-weight models, treat any tool-calling score whose serving stack isn't specified — runtime, version, template source, parser behavior — as unverifiable. And treat <em>low</em> scores with more suspicion than high ones. A high score proves the model and the path both work. A low score proves only their conjunction fails, and this article is four demonstrations that the path is the more likely culprit. On-device deployments compound this: quantization can corrupt the very special tokens the parser keys on (documented — Qualcomm confirmed the mechanism is quantization-induced, with no current fix), so the parser's tolerance becomes part of the model's effective accuracy.</p>
 
+<p>September adds a second reason to read leaderboards carefully. The fastest path and the most accurate path can be different paths for the same weights. On this board the compiled bundle turns an agent request in 7.4 s at 92.3%, and the same model as a GGUF on the same NPU takes 14.5 s at 98.5%. A leaderboard that ranks by tokens per second ranks those two in the wrong order for an agent, and one that scores accuracy on a datacenter GPU never sees the difference at all.</p>
+
 <p>The through-line of this series holds here too. An NPU doesn't run "a model" — it runs operations, fed by a template and read back through a parser. Everything in this article follows from taking the second half of that sentence as seriously as the first.</p>
 
 <h2 id="principles">Transferable principles</h2>
 
 <ul>
 <li>A tool-calling benchmark score is a property of a (model, serving path) pair. Never attribute it to the model until two paths agree.</li>
+<li>The compute unit changes speed only. Same weights and same binary gave the same answers on the CPU and on the NPU; hold everything else constant and the accelerator is not a suspect in accuracy.</li>
 <li>Bench through the model's reference template (llama.cpp <code>--jinja</code> or equivalent) before any custom or vendor path. The best score across paths is your capability estimate; the deployment path's score is your product number.</li>
-<li>Read raw completions before concluding anything. Invented tool names mean the tools never arrived; intact JSON with a wrong wrapper means the parser dropped it; right tool with wrong arguments means template drift.</li>
+<li>Read raw completions before concluding anything. Invented tool names mean the tools never arrived; intact JSON with a wrong wrapper means the parser dropped it; right tool with wrong arguments means template drift; clean prose with no call means the model on this path.</li>
 <li>Partial serving damage (rung 3's 36-point tax) is more dangerous than total damage, because it impersonates a mediocre model instead of announcing a broken path.</li>
 <li>Write parsers tag-agnostic: scan for balanced JSON, don't trust wrapper tokens. Quantization can corrupt exactly the special tokens you'd anchor on.</li>
 <li>Re-bench after every runtime upgrade. A new runtime version is a new serving path.</li>
+<li>The fastest path and the most accurate path can differ for the same weights. Report both numbers, and say which one you deployed.</li>
 <li>Schema shape (nested vs flat) measured as a non-factor here — spend redesign effort on the serving path first, schema aesthetics later.</li>
 <li>Base models tolerated template drift worse than instruct-tuned ones in the pairs measured here (inferred from two model pairs, not a general law); a base model's bad score through a nonstandard path says almost nothing about its ceiling.</li>
+</ul>
+
+<h2 id="changes">What changed since the August version</h2>
+
+<ul>
+<li>Added the same-binary CPU-versus-NPU control of 10 September, which removes the compute unit as a variable and puts the cost of the compiled 4-bit format at about six points.</li>
+<li>Added the two Gemma-4 retests on the fixed alpha builds, 21 August and 9 September: both reported bugs fixed, one length-triggered corruption found and fixed in between, and a remaining refusal above roughly 1.4K prompt tokens that the vendor attributes to the compiled path.</li>
+<li>Added the five-repetition determinism check on the production configuration, and a third methodology rule.</li>
+<li>The runtime list now runs to v0.5.1-alpha.2. Production is unchanged: Qwen3-4B-Instruct-2507, W4A16, 4K context, GenieX v0.4.0 on Qualcomm Linux 1.6.</li>
 </ul>
 
 </main>
