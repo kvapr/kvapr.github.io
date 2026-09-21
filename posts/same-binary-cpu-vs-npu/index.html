@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Same binary, CPU vs NPU</title>
+<style>
+  :root {
+    --bg: #ffffff; --fg: #1a1d23; --muted: #5a6270; --accent: #0b6e4f;
+    --qc: #3253dc; --border: #d8dde4; --loss: #b5382e;
+    --code-bg: #f3f5f8; --surface: #ffffff; --surface-2: #f3f5f8;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1216; --fg: #e6e9ee; --muted: #9aa4b2; --accent: #4dd2a5;
+      --qc: #8fa6ff; --border: #2a323c; --loss: #ea7d71;
+      --code-bg: #161b22; --surface: #141920; --surface-2: #1a2028;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 17px/1.65 -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  }
+  main { max-width: 720px; margin: 0 auto; padding: 2.5rem 1.25rem 4rem; }
+  h1 { font-size: 1.7rem; line-height: 1.25; margin: 0 0 .25rem; }
+  h2 { font-size: 1.25rem; margin: 2.2rem 0 .6rem; padding-top: .9rem; border-top: 1px solid var(--border); }
+  h3 { font-size: 1.05rem; margin: 1.8rem 0 .4rem; }
+  .subtitle { color: var(--muted); margin: 0 0 1.25rem; }
+  .abstract {
+    margin: 0 0 2rem; padding: .9rem 1.1rem; background: var(--surface-2);
+    border-left: 3px solid var(--accent); border-radius: 0 8px 8px 0;
+  }
+  .abstract p { margin: 0; }
+  p { margin: .8rem 0; }
+  a { color: var(--qc); }
+  ul, ol { padding-left: 1.4rem; }
+  li { margin: .35rem 0; }
+  code { font-family: var(--mono); font-size: .88em; font-variant-ligatures: none; font-feature-settings: "liga" 0, "calt" 0; }
+  p code, li code, td code { background: var(--code-bg); padding: .05em .3em; border-radius: 3px; }
+  pre {
+    background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px;
+    padding: .8rem 1rem; overflow-x: auto; font-family: var(--mono); font-size: .85rem; line-height: 1.55;
+    font-variant-ligatures: none; font-feature-settings: "liga" 0, "calt" 0;
+  }
+  pre code { font-size: 1em; }
+  .tablewrap { overflow-x: auto; margin: 1rem 0 1.25rem; }
+  table { border-collapse: collapse; width: 100%; font-size: .93rem; line-height: 1.45; font-variant-numeric: tabular-nums; }
+  thead th {
+    text-align: left; font-size: .76rem; letter-spacing: .05em; text-transform: uppercase; color: var(--muted);
+    padding: .45rem .75rem .45rem 0; border-bottom: 1px solid var(--fg); white-space: nowrap;
+  }
+  tbody td { vertical-align: top; padding: .5rem .75rem .5rem 0; border-bottom: 1px solid var(--border); }
+  tbody tr:last-child td { border-bottom: 1px solid var(--fg); }
+  th.num, td.num { text-align: right; }
+  th:last-child, td:last-child { padding-right: 0; }
+  td.name { font-weight: 600; white-space: nowrap; }
+  .loss { color: var(--loss); font-weight: 600; }
+  .pass { color: var(--accent); font-weight: 600; }
+  .fn { font-size: .85rem; color: var(--muted); margin: -.5rem 0 1.2rem; }
+  figure {
+    margin: 1.5rem 0; padding: .75rem .75rem .5rem; background: var(--surface);
+    border: 1px solid var(--border); border-radius: 10px;
+  }
+  figure svg { width: 100%; height: auto; display: block; color: var(--fg); }
+  figcaption { font-size: .88rem; color: var(--muted); margin-top: .6rem; line-height: 1.5; }
+  figcaption .figno { font-weight: 600; color: var(--fg); }
+  svg text { font-size: 12.5px; fill: currentColor; font-family: inherit; }
+  svg text.h { font-weight: 600; font-size: 13px; }
+  svg text.b { font-weight: 600; }
+  svg text.s { fill: var(--muted); font-size: 11.5px; }
+  svg text.mono { font-family: var(--mono); font-size: 11px; }
+  svg text.tag { fill: var(--accent); font-family: var(--mono); font-size: 9.5px; letter-spacing: .08em; }
+  svg text.lbl { fill: var(--muted); font-size: 11px; }
+  svg .lane { fill: var(--surface-2); stroke: var(--border); stroke-width: 1; }
+  svg .fp, svg .dec { fill: var(--surface); stroke: var(--accent); stroke-width: 1.5; }
+  svg .box { fill: var(--surface-2); stroke: var(--border); stroke-width: 1; }
+  svg .end { fill: var(--surface-2); stroke: var(--accent); stroke-width: 1.5; }
+  svg .flow { fill: none; stroke: currentColor; stroke-width: 1.5; }
+  .update { margin: 0 0 1.5rem; font-size: .95rem; color: var(--muted); }
+  .setup { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: .6rem; margin: 1rem 0 1.25rem; }
+  .setup div { border: 1px solid var(--border); border-radius: 8px; padding: .6rem .8rem; background: var(--surface-2); font-size: .93rem; }
+  .setup b { display: block; font-size: .72rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin-bottom: .15rem; }
+  .cpu { color: var(--muted); }
+  .npu { color: var(--accent); font-weight: 600; }
+  .ratio { color: var(--muted); font-size: .8rem; }
+  .legend { display: flex; gap: 1.2rem; font-size: .85rem; color: var(--muted); margin: .2rem 0 .4rem; }
+  .legend span::before { content: ""; display: inline-block; width: .6rem; height: .6rem; border-radius: 2px; margin-right: .4rem; vertical-align: -1px; }
+  .legend .l-cpu::before { background: var(--muted); } .legend .l-npu::before { background: var(--accent); }
+  .capt { font-size: .88rem; color: var(--muted); margin: .4rem 0 0; }
+  .turns { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .6rem; margin: 1rem 0 .5rem; }
+  .turn { background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: .7rem .8rem; }
+  .turn b { display: block; font-size: .72rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  .turn .n { font-size: 1.6rem; font-weight: 700; font-variant-numeric: tabular-nums; margin: .15rem 0 0; }
+  .turn .a { font-size: .85rem; color: var(--muted); }
+  .aside { border-left: 3px solid var(--accent); background: var(--surface-2); border-radius: 0 8px 8px 0; padding: .8rem 1.05rem; margin: 1.25rem 0; }
+  .aside p { margin: .4rem 0; }
+  @media (max-width: 560px) { .turns { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<main>
+<p style="margin:0 0 1.5rem"><a href="../../" style="color:var(--muted);text-decoration:none;font-size:.9rem">&#8592; home</a></p>
+
+<h1>Same binary, CPU vs NPU</h1>
+<p class="subtitle">What changes when one 4-billion-parameter model moves from a board's CPU cores to its neural accelerator, with everything else held fixed: same model file, same runtime binary, same prompts, same harness. One flag differs.</p>
+
+<div class="abstract">
+<p>Most CPU-versus-NPU comparisons change three things at once: the model format, the runtime, and the compute unit, then report one number and call it a hardware comparison. This post changes one thing. It is the measurement behind two claims made elsewhere on this blog: that the compute unit changes speed only, which closed a gap in <a href="../serving-path-is-the-model-revisited/">the serving-path finding</a>, and that agent workloads live in prefill while chat lives in decode. Every number is from one afternoon on a Qualcomm QCS9075, five repetitions per row, run-to-run spread under one percent. Measured 10 September 2026.</p>
+</div>
+
+<h2 id="summary">Summary</h2>
+
+<p>The NPU reads the prompt <strong>five to seven times faster</strong> and writes the answer <strong>about 40% slower</strong>. Accuracy on a 65-case agent benchmark was <strong>identical</strong> on both paths, 98.5%. Because an agent turn is mostly prompt, a turn took 52.5 s on the CPU and 14.5 s on the NPU. The compute unit changes speed only, and where it changes it is prefill.</p>
+
+<h2 id="setup">Setup</h2>
+
+<div class="setup">
+  <div><b>Board</b>Qualcomm QCS9075 (Dragonwing IQ-9075 EVK), Qualcomm Linux 1.6, fan cooled</div>
+  <div><b>Model</b>Qwen3-4B-Instruct-2507, one Q4_0 GGUF file, used by both paths</div>
+  <div><b>Runtime</b>One llama.cpp binary with a CPU backend and a Hexagon NPU backend; the compute flag is the only change</div>
+  <div><b>Method</b>Streaming requests; 5 repetitions per row; run-to-run spread under 1%; board gated cool before each row</div>
+</div>
+
+<h2 id="pair">The controlled pair</h2>
+
+<div class="legend"><span class="l-cpu">CPU cores</span><span class="l-npu">Hexagon NPU, same binary</span></div>
+<div class="tablewrap">
+<table>
+<thead><tr><th>Prompt</th><th class="num">Prefill tok/s</th><th class="num">Decode tok/s</th><th class="num">First token</th><th class="num">128-token answer</th></tr></thead>
+<tbody>
+<tr><td class="name">256 tokens</td>
+    <td class="num"><span class="cpu">74</span> → <span class="npu">358</span> <span class="ratio">4.8×</span></td>
+    <td class="num"><span class="cpu">17.1</span> → <span class="npu">12.1</span> <span class="ratio">0.71×</span></td>
+    <td class="num"><span class="cpu">3.5 s</span> → <span class="npu">0.7 s</span></td>
+    <td class="num"><span class="cpu">11.0 s</span> → <span class="npu">11.4 s</span></td></tr>
+<tr><td class="name">1,022 tokens</td>
+    <td class="num"><span class="cpu">69</span> → <span class="npu">411</span> <span class="ratio">6.0×</span></td>
+    <td class="num"><span class="cpu">15.3</span> → <span class="npu">9.7</span> <span class="ratio">0.63×</span></td>
+    <td class="num"><span class="cpu">14.9 s</span> → <span class="npu">2.5 s</span></td>
+    <td class="num"><span class="cpu">23.3 s</span> → <span class="npu">15.7 s</span></td></tr>
+<tr><td class="name">2,044 tokens</td>
+    <td class="num"><span class="cpu">60</span> → <span class="npu">386</span> <span class="ratio">6.4×</span></td>
+    <td class="num"><span class="cpu">13.4</span> → <span class="npu">7.9</span> <span class="ratio">0.59×</span></td>
+    <td class="num"><span class="cpu">33.8 s</span> → <span class="npu">5.3 s</span></td>
+    <td class="num"><span class="cpu">43.4 s</span> → <span class="npu">21.5 s</span></td></tr>
+<tr><td class="name">2,795 tokens</td>
+    <td class="num"><span class="cpu">53</span> → <span class="npu">369</span> <span class="ratio">6.9×</span></td>
+    <td class="num"><span class="cpu">10.9</span> → <span class="npu">7.0</span> <span class="ratio">0.64×</span></td>
+    <td class="num"><span class="cpu">53.0 s</span> → <span class="npu">7.6 s</span></td>
+    <td class="num"><span class="cpu">65.6 s</span> → <span class="npu">25.9 s</span></td></tr>
+</tbody>
+</table>
+</div>
+<p class="capt">Prefill is prompt processing; decode is answer generation; first token is the wait before anything appears. Last column: full wall-clock time for a 128-token answer. At 256 tokens the two paths tie end to end: the NPU's prefill gain and decode loss cancel. Every longer prompt tips it to the NPU.</p>
+
+<h2 id="agent">What an agent feels</h2>
+
+<p>An agent turn is a long prompt and a short answer: system instructions, tool schemas and device output add up to about 2.7K tokens in, with a structured tool call of about 50 tokens out. That shape is nearly all prefill, so the prefill column decides the turn.</p>
+
+<div class="turns">
+  <div class="turn"><b>CPU cores</b><div class="n">52.5 s</div><div class="a">per turn · 98.5% accuracy</div></div>
+  <div class="turn"><b>NPU, same binary</b><div class="n">14.5 s</div><div class="a">per turn · 98.5% accuracy</div></div>
+  <div class="turn"><b>NPU, compiled path</b><div class="n">7.4 s</div><div class="a">per turn · 92.3% accuracy</div></div>
+</div>
+<p class="capt">65-case tool-calling benchmark, median turn latency; the two GGUF paths gave the same answers on every case.</p>
+
+<h2 id="compiled">The compiled path, kept separate</h2>
+
+<div class="aside">
+<p>The board vendor's serving stack can also run this model as a fixed NPU graph compiled ahead of time (a W4A16 bundle) rather than through llama.cpp. Measured the same way: <strong>716 to 1,094 tok/s prefill</strong>, first token <strong>0.36 s</strong> at 256 tokens and <strong>2.0 s</strong> at 2,044, decode 16.1 to 13.1 tok/s over long generations.</p>
+<p>It is a different model format, so it is not part of the controlled pair, and it scored 92.3% on the same benchmark against 98.5% for the GGUF paths. The fastest path is not the most accurate one; the six-point gap is the format, not the silicon. (The 2,795-token row could not be measured on this path in the serving version used, a generation-length limitation fixed in a newer release.)</p>
+</div>
+
+<h2 id="why">Why the CPU wins decode</h2>
+
+<ul>
+<li>Prefill processes the whole prompt in parallel: compute-bound, exactly what a matrix accelerator is built for.</li>
+<li>Decode produces one token at a time and is bound by memory bandwidth; on this board the NPU shares that memory with the CPU, so it gains nothing there, and each token also pays a round trip between CPU and accelerator. At this model size that tax exceeds the accelerator's gain.</li>
+<li>Public leaderboards rank decode, the one phase where a CPU holds its own. For chat that is the right column. For agents, retrieval and summarization, rank by prefill and first token instead.</li>
+</ul>
+
+<p>The mechanism behind these numbers, without the numbers, is written up separately as "Chat is decode, agents are prefill". The accuracy side of the same afternoon, the 98.5% that did not move between compute units and the six points the compiled format costs, is in <a href="../serving-path-is-the-model-revisited/">the serving-path post</a>.</p>
+
+</main>
+</body>
+</html>
