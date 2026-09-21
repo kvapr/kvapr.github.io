@@ -76,6 +76,12 @@
     <p class="desc">Inside a Qualcomm NPU sits 8 MB of SRAM that the compiler plans by hand. Why it is not a cache, why that makes compiled models fast, what contention for it looks like, how it differs from the NPU's other memory wall, and where to read more.</p>
   </div>
 
+  <div class="post">
+    <a class="title" href="posts/one-memory-three-views/">CPU, GPU, and NPU on one Qualcomm SoC: one memory, three views</a>
+    <p class="date">September 2026</p>
+    <p class="desc">The CPU, the GPU, and the NPU share one LPDDR pool on a Qualcomm SoC, but each reaches it through different machinery with its own ceiling: physical RAM, 256 MiB per GPU buffer, about 1 GB of NPU mapping space, 8 MB of on-chip scratchpad. The whole hierarchy in one figure, and the arithmetic that turns a ceiling into a context-length decision.</p>
+  </div>
+
   <footer>
     <a href="https://x.com/imdasein">X</a> ·
     <a href="https://www.linkedin.com/in/krish-viswanathan/">LinkedIn</a> ·

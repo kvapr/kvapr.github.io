@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CPU, GPU, and NPU on one Qualcomm SoC: one memory, three views</title>
+<style>
+  :root {
+    --bg: #ffffff; --fg: #1a1d23; --muted: #5a6270; --accent: #0b6e4f;
+    --qc: #3253dc; --border: #d8dde4; --loss: #b5382e;
+    --code-bg: #f3f5f8; --surface: #ffffff; --surface-2: #f3f5f8;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1216; --fg: #e6e9ee; --muted: #9aa4b2; --accent: #4dd2a5;
+      --qc: #8fa6ff; --border: #2a323c; --loss: #ea7d71;
+      --code-bg: #161b22; --surface: #141920; --surface-2: #1a2028;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 17px/1.65 -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  }
+  main { max-width: 720px; margin: 0 auto; padding: 2.5rem 1.25rem 4rem; }
+  h1 { font-size: 1.7rem; line-height: 1.25; margin: 0 0 .25rem; }
+  h2 { font-size: 1.25rem; margin: 2.2rem 0 .6rem; padding-top: .9rem; border-top: 1px solid var(--border); }
+  h3 { font-size: 1.05rem; margin: 1.8rem 0 .4rem; }
+  .subtitle { color: var(--muted); margin: 0 0 1.25rem; }
+  .abstract {
+    margin: 0 0 2rem; padding: .9rem 1.1rem; background: var(--surface-2);
+    border-left: 3px solid var(--accent); border-radius: 0 8px 8px 0;
+  }
+  .abstract p { margin: 0; }
+  p { margin: .8rem 0; }
+  a { color: var(--qc); }
+  ul, ol { padding-left: 1.4rem; }
+  li { margin: .35rem 0; }
+  code { font-family: var(--mono); font-size: .88em; font-variant-ligatures: none; font-feature-settings: "liga" 0, "calt" 0; }
+  p code, li code, td code { background: var(--code-bg); padding: .05em .3em; border-radius: 3px; }
+  pre {
+    background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px;
+    padding: .8rem 1rem; overflow-x: auto; font-family: var(--mono); font-size: .85rem; line-height: 1.55;
+    font-variant-ligatures: none; font-feature-settings: "liga" 0, "calt" 0;
+  }
+  pre code { font-size: 1em; }
+  .tablewrap { overflow-x: auto; margin: 1rem 0 1.25rem; }
+  table { border-collapse: collapse; width: 100%; font-size: .93rem; line-height: 1.45; font-variant-numeric: tabular-nums; }
+  thead th {
+    text-align: left; font-size: .76rem; letter-spacing: .05em; text-transform: uppercase; color: var(--muted);
+    padding: .45rem .75rem .45rem 0; border-bottom: 1px solid var(--fg); white-space: nowrap;
+  }
+  tbody td { vertical-align: top; padding: .5rem .75rem .5rem 0; border-bottom: 1px solid var(--border); }
+  tbody tr:last-child td { border-bottom: 1px solid var(--fg); }
+  th.num, td.num { text-align: right; }
+  th:last-child, td:last-child { padding-right: 0; }
+  td.name { font-weight: 600; white-space: nowrap; }
+  .loss { color: var(--loss); font-weight: 600; }
+  .pass { color: var(--accent); font-weight: 600; }
+  .fn { font-size: .85rem; color: var(--muted); margin: -.5rem 0 1.2rem; }
+  figure {
+    margin: 1.5rem 0; padding: .75rem .75rem .5rem; background: var(--surface);
+    border: 1px solid var(--border); border-radius: 10px;
+  }
+  figure svg { width: 100%; height: auto; display: block; color: var(--fg); }
+  figcaption { font-size: .88rem; color: var(--muted); margin-top: .6rem; line-height: 1.5; }
+  figcaption .figno { font-weight: 600; color: var(--fg); }
+  svg text { font-size: 12.5px; fill: currentColor; font-family: inherit; }
+  svg text.h { font-weight: 600; font-size: 13px; }
+  svg text.b { font-weight: 600; }
+  svg text.s { fill: var(--muted); font-size: 11.5px; }
+  svg text.mono { font-family: var(--mono); font-size: 11px; }
+  svg text.tag { fill: var(--accent); font-family: var(--mono); font-size: 9.5px; letter-spacing: .08em; }
+  svg text.lbl { fill: var(--muted); font-size: 11px; }
+  svg .lane { fill: var(--surface-2); stroke: var(--border); stroke-width: 1; }
+  svg .fp, svg .dec { fill: var(--surface); stroke: var(--accent); stroke-width: 1.5; }
+  svg .box { fill: var(--surface-2); stroke: var(--border); stroke-width: 1; }
+  svg .end { fill: var(--surface-2); stroke: var(--accent); stroke-width: 1.5; }
+  svg .flow { fill: none; stroke: currentColor; stroke-width: 1.5; }
+  .update { margin: 0 0 1.5rem; font-size: .95rem; color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+<p style="margin:0 0 1.5rem"><a href="../../" style="color:var(--muted);text-decoration:none;font-size:.9rem">&#8592; home</a></p>
+
+<h1>CPU, GPU, and NPU on one Qualcomm SoC: one memory, three views</h1>
+<p class="subtitle">How the same LPDDR looks from the CPU, the GPU, and the NPU on a Qualcomm SoC, and the ceilings in each view that decide what runs where.</p>
+
+<div class="abstract">
+<p>Every memory limit hit while serving language models on this board traces to one fact: the four processors share one pool of DRAM, but each reaches it through different machinery with its own ceiling. This post draws the whole hierarchy once. It covers the CPU's plain view, the GPU's 256 MiB buffer cap, the NPU's mapping space and its on-chip scratchpad, what the vector and matrix engines each do, and the arithmetic that turns a ceiling into a context-length decision. Three earlier posts carry pieces of this: <a href="../vtcm-the-npus-scratchpad/">the scratchpad</a>, <a href="../same-binary-cpu-vs-npu/">the CPU-versus-NPU measurement</a>, and <a href="../context-window-8k/">the context window</a>. Board: Qualcomm QCS9075 on the Dragonwing IQ-9075 EVK, Hexagon v73, Adreno 663. Every ceiling below was measured on it.</p>
+</div>
+
+<h2 id="pool">One pool, four processors</h2>
+
+<p>The QCS9075 carries a Kryo CPU with eight ARM cores, an Adreno 663 GPU, and a Hexagon NPU that presents as two compute-DSP domains. There is no separate GPU memory and no separate NPU memory. All four read and write the same LPDDR, over the same bandwidth. That single fact explains two things at once. It explains why decode, which is bound by memory bandwidth, comes out roughly even between the CPU and the NPU, as the <a href="../same-binary-cpu-vs-npu/">same-binary measurement</a> showed. And it explains why the interesting differences are not about how much memory each processor has, but about how each one gets at it.</p>
+
+<figure>
+<svg viewBox="0 0 760 350" role="img" aria-label="Three processors above one shared LPDDR pool. The CPU reaches it through ordinary virtual memory with physical RAM as the only ceiling. The GPU reaches it through OpenCL driver buffers capped at 256 MiB each. The NPU reaches it through FastRPC DMA mappings of about 1 GB per compute domain, and inside the NPU an 8 MB VTCM scratchpad feeds the engines.">
+<defs><marker id="arm" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5 0 10z" fill="currentColor"/></marker></defs>
+<rect class="lane" x="20" y="290" width="720" height="44" rx="6"/>
+<text class="b" x="380" y="310" text-anchor="middle">Shared LPDDR</text>
+<text class="s" x="380" y="326" text-anchor="middle">one pool, one bandwidth, for all four processors</text>
+<rect class="box" x="20" y="20" width="220" height="44" rx="6"/>
+<text class="b" x="130" y="40" text-anchor="middle">Kryo CPU</text>
+<text class="s" x="130" y="56" text-anchor="middle">8 cores</text>
+<rect class="box" x="270" y="20" width="220" height="44" rx="6"/>
+<text class="b" x="380" y="40" text-anchor="middle">Adreno GPU</text>
+<text class="s" x="380" y="56" text-anchor="middle">OpenCL compute</text>
+<rect class="box" x="520" y="20" width="220" height="44" rx="6"/>
+<text class="b" x="630" y="40" text-anchor="middle">Hexagon NPU</text>
+<text class="s" x="630" y="56" text-anchor="middle">two compute domains, v73</text>
+<rect class="fp" x="20" y="104" width="220" height="70" rx="6"/>
+<text class="tag" x="32" y="122">VIEW</text>
+<text class="b" x="32" y="142">Virtual memory</text>
+<text class="s" x="32" y="160">ceiling: physical RAM</text>
+<rect class="fp" x="270" y="104" width="220" height="70" rx="6"/>
+<text class="tag" x="282" y="122">VIEW</text>
+<text class="b" x="282" y="142">OpenCL driver buffers</text>
+<text class="s" x="282" y="160">ceiling: 256 MiB per buffer</text>
+<rect class="fp" x="520" y="104" width="220" height="70" rx="6"/>
+<text class="tag" x="532" y="122">VIEW</text>
+<text class="b" x="532" y="142">FastRPC DMA mapping</text>
+<text class="s" x="532" y="160">ceiling: about 1 GB per domain</text>
+<rect class="box" x="560" y="200" width="140" height="56" rx="6"/>
+<text class="b" x="630" y="222" text-anchor="middle">VTCM</text>
+<text class="s" x="630" y="240" text-anchor="middle">8 MB per domain, on-chip</text>
+<line class="flow" x1="130" y1="64" x2="130" y2="102" marker-end="url(#arm)"/>
+<line class="flow" x1="380" y1="64" x2="380" y2="102" marker-end="url(#arm)"/>
+<line class="flow" x1="630" y1="64" x2="630" y2="102" marker-end="url(#arm)"/>
+<line class="flow" x1="130" y1="174" x2="130" y2="288" marker-end="url(#arm)"/>
+<line class="flow" x1="380" y1="174" x2="380" y2="288" marker-end="url(#arm)"/>
+<line class="flow" x1="630" y1="174" x2="630" y2="198" marker-end="url(#arm)"/>
+<line class="flow" x1="630" y1="256" x2="630" y2="288" marker-end="url(#arm)"/>
+<text class="lbl" x="644" y="276">tiles stream through</text>
+</svg>
+<figcaption><span class="figno">Figure 1.</span> One memory, three views. Each processor reaches the same LPDDR through its own machinery, and each machinery has its own ceiling. The NPU has two: the mapping space and the on-chip scratchpad.</figcaption>
+</figure>
+
+<h2 id="cpu">The CPU's view: ordinary</h2>
+
+<p>The CPU sees memory the way any Linux process does. Every byte is addressable through the MMU, allocations are limited by physical RAM, and nothing in this model lineup comes close to that limit. The costs are elsewhere: a decode loop pins all eight cores, the CPU legs of the same-binary run were the hottest on the board, and prefill is five to seven times slower than on the NPU. But nothing fails to load on the CPU, which is why it is the reference path for every accuracy measurement on this blog.</p>
+
+<h2 id="gpu">The GPU's view: 256 MiB at a time</h2>
+
+<p>The GPU reaches memory through OpenCL buffers that the driver manages. On Adreno 6xx parts the driver reports 1 GiB of global memory regardless of the physical RAM behind it, and the OpenCL specification's minimum for the largest single allocation is a quarter of global memory. The result is a hard cap of 256 MiB per buffer. Measured on two IQ-9075 boards, on two Qualcomm Linux releases: 256 MiB exactly, one byte over fails, the driver extension that lifts the cap on newer Adreno generations is absent, and the Vulkan driver sits at 1.2.140 on both. Qualcomm's OpenCL guide does not mention the number.</p>
+
+<p>The cap does not stop a model from being larger than 256 MiB. llama.cpp packs a model across as many buffers as it needs. It stops any single tensor from being larger than 256 MiB, and every model in the lineup has exactly one such tensor: the token-embedding matrix. Its size follows the vocabulary, not the parameter count, and quantization does not rescue it, because llama.cpp keeps embeddings at a higher precision even inside a 4-bit model. Llama-3.2-3B with a 128K vocabulary carries a 308 MB embedding; Phi-4-Mini with 200K, 481 MB; Qwen3.5-4B with 248K, 497 MB. A larger vocabulary makes a smaller model harder to load. In two months of attempts across three Qualcomm SoCs, no model in the lineup loaded with full GPU offload. That is the whole reason the GPU sits idle in this series.</p>
+
+<h2 id="npu">The NPU's view: mapped, then staged</h2>
+
+<p>The NPU is a separate processor with its own address space. The CPU talks to it over FastRPC, a remote-procedure-call bridge: a stub library on the CPU side, a skeleton library loaded onto the DSP, and shared buffers that both can map. Every byte the NPU touches must first be mapped into its DMA address space, and that space is about 1 GB per compute domain. In practice each inference context gets roughly 1 to 1.5 GB of contiguous mapped memory, and the limit has shown up in three forms on this board:</p>
+
+<ul>
+<li><strong>Weight mapping.</strong> An 8B model exported in five parts had parts of 1.0 to 1.2 GB; the 1.22 GB part failed to map. Re-exporting in eight parts, each under about 1 GB, fixed it.</li>
+<li><strong>The KV cache.</strong> A 16K-context bundle needs a KV buffer near 1.5 GB. It overflowed at load, every request failed with error 6001, and the engine hung until reboot. No setting rescues 16K on this silicon.</li>
+<li><strong>Mapping count.</strong> Loading the eight-part bundle then failed on the fourth part because the kernel's default limit on memory mappings was too low for that many large maps. Raising it fixed that.</li>
+</ul>
+
+<p>Once mapped, data still has to get to the compute engines, and the engines are too fast to be fed from DRAM. Inside each domain sits VTCM, 8 MB of on-chip SRAM that DMA engines fill with tiles of weights and activations. It is a scratchpad, not a cache: the compiler plans which tiles occupy it at each step, which is a large part of why compiled models are fast, and why two resident models contend for it. <a href="../vtcm-the-npus-scratchpad/">The scratchpad post</a> covers that ceiling on its own.</p>
+
+<p>The engines themselves are two kinds. Each domain reports four hardware threads, four HVX units, one HMX unit, and the 8 MB of VTCM. HVX is the wide vector unit: it does the elementwise and reduction work of a transformer, the normalizations, softmax, rotary embeddings, activations, and dequantization. HMX is the matrix engine: it does the large matrix multiplications that dominate the arithmetic. Both NPU paths on this board reach both engines. The compiled bundle path is tuned for HMX with 4-bit weights and 16-bit activations; llama.cpp's Hexagon backend carries HVX intrinsics and tiled HMX kernels for matrix multiply and attention. What separates them is planning. The compiler sees the whole graph ahead of time and plans fusion and VTCM tiling across it; llama.cpp dispatches one operation at a time. That planning is the likeliest reason the compiled path reads prompts at about 1,000 tokens per second where llama.cpp on the same NPU reads at about 390, though I have not instrumented it, so treat that attribution as inferred. The compiled path is also the one that costs six points of tool-calling accuracy for its format, which <a href="../serving-path-is-the-model-revisited/">the serving-path post</a> measures.</p>
+
+<p>One more property of the NPU's view: it can be absent without any error. If the environment variable that locates the DSP skeleton libraries is unset or points at the wrong Hexagon version, the runtime falls back to the CPU, produces correct output, and never says the NPU was not involved. On this platform, the first thing to verify is that offload happened at all.</p>
+
+<h2 id="ceilings">The ceilings, side by side</h2>
+
+<div class="tablewrap">
+<table>
+<thead><tr><th>View</th><th>Machinery</th><th>Ceiling</th><th>What hits it here</th></tr></thead>
+<tbody>
+<tr><td class="name">CPU</td><td>virtual memory through the MMU</td><td>physical RAM</td><td>nothing in this lineup</td></tr>
+<tr><td class="name">GPU</td><td>OpenCL driver buffers</td><td>256 MiB per buffer; 1 GiB reported in total</td><td>the token-embedding tensor of every model with a 128K or larger vocabulary</td></tr>
+<tr><td class="name">NPU, mapping</td><td>FastRPC into the DMA address space</td><td>about 1 GB per domain; 1 to 1.5 GB per inference context</td><td>a 16K-context KV cache; bundle parts over about 1 GB</td></tr>
+<tr><td class="name">NPU, on-chip</td><td>VTCM, planned by the compiler</td><td>8 MB per domain</td><td>the working tiles of one model; a second resident model</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="cost">What a ceiling costs: the context window</h2>
+
+<p>The mapping ceiling is the one that turns into a product decision, because the KV cache scales with the compiled context window and has to fit under it. For a 4B model with 8-bit KV and grouped-query attention, the cache costs about 72 KB per token; for an 8B model about 76 KB. The arithmetic follows:</p>
+
+<div class="tablewrap">
+<table>
+<thead><tr><th>Compiled context</th><th class="num">KV buffer, 4B model</th><th>Under the ceiling?</th></tr></thead>
+<tbody>
+<tr><td class="name">4K</td><td class="num">about 344 MB</td><td>yes; the deployed configuration</td></tr>
+<tr><td class="name">8K</td><td class="num">about 700 MB</td><td>yes; measured, at about twice the per-turn time</td></tr>
+<tr><td class="name">16K</td><td class="num">1.2 to 1.5 GB</td><td>no; error 6001, reproduced with an 8B 16K bundle</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>A context that does not fit does not degrade; it fails to allocate, at load or at the first request. So the window is chosen at compile time against a memory budget, and <a href="../context-window-8k/">the context-window post</a> shows the other half of the trade: the 8K build fits, and runs about 1.9 times slower per turn, because a fixed-shape graph pays for the whole window on every token. Two design rules follow. Choose the smallest window the workload needs. And reject oversize prompts at the server before they reach the engine; the soak test fires 6K-token prompts at the 4K deployment to prove they are refused instantly rather than discovered at the wall.</p>
+
+<h2 id="placement">What the three views decide</h2>
+
+<p>Placement on this chip is a question about views, not about which processor is fastest in the abstract. Bandwidth is shared, so the memory-bound phase, decode, lands roughly even between CPU and NPU, and the compute-bound phase, prefill, belongs to the NPU. The GPU's view is the narrowest today, one tensor at a time under 256 MiB, which keeps it out of the LLM lane on this board even though it is the one accelerator present on every Qualcomm tier; a model whose embedding fits under the cap might change that, and nobody has published the attempt. The NPU's two domains, each with its own mapping space and its own scratchpad, are the near-term way to run a vision model beside the language model without the two contending. And whatever the placement, the first measurement is always the same one: confirm that the work landed where the flag said it would.</p>
+
+</main>
+</body>
+</html>
