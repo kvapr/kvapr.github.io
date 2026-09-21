@@ -3,140 +3,94 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>The Serving Path Is the Model</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,500&family=Source+Sans+3:ital,wght@0,400;0,600;1,400;1,600&family=JetBrains+Mono:wght@400;500&display=swap">
+<title>The serving path is the model</title>
 <style>
-:root{
-  --ground:#F3F5F7; --surface:#FFFFFF; --surface-2:#EBEFF2;
-  --ink:#161E27; --ink-2:#3B4754; --muted:#66727F;
-  --hair:#D5DCE3; --hair-2:#E4E9EE;
-  --accent:#0F6F7C; --accent-2:#0B5561; --accent-soft:rgba(15,111,124,.10);
-  --pass:#25795A; --pass-soft:rgba(37,121,90,.12);
-  --loss:#B5382E; --loss-soft:rgba(181,56,46,.11);
-  --code-bg:#EEF2F5; --link:#0F6F7C;
-  --display:"Fraunces",Georgia,"Times New Roman",serif;
-  --sans:"Source Sans 3","Segoe UI",Helvetica,Arial,sans-serif;
-  --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
-  color-scheme:light;
-}
-@media (prefers-color-scheme: dark){
-  :root:not([data-theme="light"]){
-    --ground:#0E1317; --surface:#151B21; --surface-2:#1B232B;
-    --ink:#E5EBF1; --ink-2:#C1CBD5; --muted:#8793A0;
-    --hair:#27313B; --hair-2:#202932;
-    --accent:#4DC4D0; --accent-2:#8FDDE5; --accent-soft:rgba(77,196,208,.14);
-    --pass:#5CC08F; --pass-soft:rgba(92,192,143,.16);
-    --loss:#EA7D71; --loss-soft:rgba(234,125,113,.16);
-    --code-bg:#0B0F13; --link:#8FDDE5;
-    color-scheme:dark;
+  :root {
+    --bg: #ffffff; --fg: #1a1d23; --muted: #5a6270; --accent: #0b6e4f;
+    --qc: #3253dc; --border: #d8dde4; --loss: #b5382e;
+    --code-bg: #f3f5f8; --surface: #ffffff; --surface-2: #f3f5f8;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   }
-}
-:root[data-theme="dark"]{
-  --ground:#0E1317; --surface:#151B21; --surface-2:#1B232B;
-  --ink:#E5EBF1; --ink-2:#C1CBD5; --muted:#8793A0;
-  --hair:#27313B; --hair-2:#202932;
-  --accent:#4DC4D0; --accent-2:#8FDDE5; --accent-soft:rgba(77,196,208,.14);
-  --pass:#5CC08F; --pass-soft:rgba(92,192,143,.16);
-  --loss:#EA7D71; --loss-soft:rgba(234,125,113,.16);
-  --code-bg:#0B0F13; --link:#8FDDE5;
-  color-scheme:dark;
-}
-*{box-sizing:border-box}
-body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--sans);font-size:17px;line-height:1.6;-webkit-font-smoothing:antialiased}
-.page{max-width:52rem;margin:0 auto;padding-inline:20px;padding-block:3rem 5rem}
-.page > p,.page > ul,.page > ol,.page h2,.page h3,.page > .note,.page > .lede{max-width:38rem}
-header.masthead{padding-bottom:1.5rem;border-bottom:1px solid var(--hair);margin-bottom:1.75rem;max-width:44rem}
-.eyebrow{font-family:var(--mono);font-size:.72rem;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:0 0 1rem;display:flex;flex-wrap:wrap;gap:.3rem 1.2rem}
-h1{font-family:var(--display);font-variation-settings:"opsz" 96;font-weight:600;font-size:2.6rem;line-height:1.08;letter-spacing:-.015em;margin:0 0 .9rem;text-wrap:balance}
-.dek{font-family:var(--display);font-style:italic;font-weight:500;font-variation-settings:"opsz" 24;font-size:1.22rem;line-height:1.45;color:var(--ink-2);margin:0 0 1.2rem;text-wrap:pretty}
-.meta{font-family:var(--mono);font-size:.76rem;color:var(--muted);margin:0;display:flex;flex-wrap:wrap;gap:.3rem 1.2rem}
-nav.toc{font-size:.92rem;margin:0 0 2rem;padding:.9rem 1.1rem;background:var(--surface);border:1px solid var(--hair);border-radius:6px;max-width:44rem}
-nav.toc .toc-label{display:block;font-family:var(--mono);font-size:.68rem;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:.35rem}
-nav.toc ol{margin:0;padding-left:1.25rem;columns:2;column-gap:2rem}
-nav.toc li{margin:.12rem 0;break-inside:avoid}
-nav.toc a{color:var(--ink-2);border:0}
-nav.toc a:hover{color:var(--link)}
-h2{font-family:var(--display);font-variation-settings:"opsz" 48;font-weight:600;font-size:1.65rem;line-height:1.2;letter-spacing:-.01em;margin:2.9rem 0 .8rem;padding-top:1.4rem;border-top:1px solid var(--hair);text-wrap:balance}
-h3{font-family:var(--sans);font-weight:600;font-size:1.08rem;line-height:1.3;margin:2.1rem 0 .55rem;color:var(--ink)}
-p{margin:.7rem 0;text-wrap:pretty}
-a{color:var(--link);text-decoration:none;border-bottom:1px solid color-mix(in srgb,var(--link) 35%,transparent)}
-a:hover{border-bottom-color:var(--link)}
-a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-strong{font-weight:600}
-em{font-style:italic}
-ul,ol{padding-left:1.35rem;margin:.6rem 0}
-li{margin:.35rem 0}
-li::marker{color:var(--muted)}
-code{font-family:var(--mono);font-size:.86em;font-variant-ligatures:none;font-feature-settings:"liga" 0,"calt" 0}
-p code,li code,td code{background:var(--code-bg);padding:.06em .32em;border-radius:3px;color:var(--ink)}
-pre{margin:.9rem 0 1.1rem;background:var(--code-bg);border:1px solid var(--hair);border-radius:6px;padding:.9rem 1rem;overflow-x:auto;font-family:var(--mono);font-size:.84rem;line-height:1.6;color:var(--ink);font-variant-ligatures:none;font-feature-settings:"liga" 0,"calt" 0}
-pre code{font-size:1em}
-.tablewrap{overflow-x:auto;margin:1rem 0 1.25rem}
-table{border-collapse:collapse;width:100%;font-size:.92rem;line-height:1.45;font-variant-numeric:tabular-nums}
-thead th{text-align:left;font-family:var(--mono);font-weight:500;font-size:.68rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);padding:.45rem .75rem .45rem 0;border-bottom:1px solid var(--ink);white-space:nowrap}
-tbody td{vertical-align:top;padding:.55rem .75rem .55rem 0;border-bottom:1px solid var(--hair)}
-tbody tr:last-child td{border-bottom:1px solid var(--ink)}
-th.num,td.num{text-align:right}
-th:last-child,td:last-child{padding-right:0}
-td.name{font-weight:600;color:var(--ink);white-space:nowrap}
-.loss{color:var(--loss);font-weight:600}
-.pass{color:var(--pass);font-weight:600}
-.fn{font-size:.82rem;color:var(--muted);margin:-.6rem 0 1.2rem;max-width:44rem}
-figure{margin:1.5rem 0 1.75rem;padding:1.1rem 1.1rem .8rem;background:var(--surface);border:1px solid var(--hair);border-radius:8px}
-figure svg{width:100%;height:auto;display:block;color:var(--ink);font-family:var(--sans)}
-figcaption{font-size:.86rem;color:var(--muted);margin-top:.7rem;line-height:1.5;max-width:38rem}
-figcaption .figno{font-weight:600;color:var(--ink-2)}
-svg text{font-size:12.5px;fill:currentColor}
-svg text.h{font-weight:600;font-size:13px}
-svg text.b{font-weight:600}
-svg text.s{fill:var(--muted);font-size:11.5px}
-svg text.mono{font-family:var(--mono);font-size:11px}
-svg text.tag{fill:var(--accent);font-family:var(--mono);font-size:9.5px;letter-spacing:.08em}
-svg text.lbl{fill:var(--muted);font-size:11px}
-svg .lane{fill:var(--surface-2);stroke:var(--hair);stroke-width:1}
-svg .fp{fill:var(--surface);stroke:var(--accent);stroke-width:1.5}
-svg .box{fill:var(--surface-2);stroke:var(--hair);stroke-width:1}
-svg .dec{fill:var(--surface);stroke:var(--accent);stroke-width:1.5}
-svg .end{fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5}
-svg .flow{fill:none;stroke:currentColor;stroke-width:1.5}
-.note{margin:1rem 0;padding:.9rem 1.1rem;background:var(--surface);border:1px solid var(--hair);border-left:3px solid var(--accent);border-radius:0 6px 6px 0;font-size:.95rem;color:var(--ink-2)}
-.note p{margin:0}
-.home{margin:0 0 1.5rem;font-family:var(--mono);font-size:.78rem}
-.home a{color:var(--muted);border:0}
-.home a:hover{color:var(--link)}
-footer.colophon{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--hair);font-family:var(--mono);font-size:.74rem;color:var(--muted)}
-@media (max-width:640px){
-  body{font-size:16px}
-  .page{padding-block:2rem 4rem}
-  h1{font-size:2rem}
-  nav.toc ol{columns:1}
-}
-@media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1216; --fg: #e6e9ee; --muted: #9aa4b2; --accent: #4dd2a5;
+      --qc: #8fa6ff; --border: #2a323c; --loss: #ea7d71;
+      --code-bg: #161b22; --surface: #141920; --surface-2: #1a2028;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 17px/1.65 -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  }
+  main { max-width: 720px; margin: 0 auto; padding: 2.5rem 1.25rem 4rem; }
+  h1 { font-size: 1.7rem; line-height: 1.25; margin: 0 0 .25rem; }
+  h2 { font-size: 1.25rem; margin: 2.2rem 0 .6rem; padding-top: .9rem; border-top: 1px solid var(--border); }
+  h3 { font-size: 1.05rem; margin: 1.8rem 0 .4rem; }
+  .subtitle { color: var(--muted); margin: 0 0 1.25rem; }
+  .abstract {
+    margin: 0 0 2rem; padding: .9rem 1.1rem; background: var(--surface-2);
+    border-left: 3px solid var(--accent); border-radius: 0 8px 8px 0;
+  }
+  .abstract p { margin: 0; }
+  p { margin: .8rem 0; }
+  a { color: var(--qc); }
+  ul, ol { padding-left: 1.4rem; }
+  li { margin: .35rem 0; }
+  code { font-family: var(--mono); font-size: .88em; font-variant-ligatures: none; font-feature-settings: "liga" 0, "calt" 0; }
+  p code, li code, td code { background: var(--code-bg); padding: .05em .3em; border-radius: 3px; }
+  pre {
+    background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px;
+    padding: .8rem 1rem; overflow-x: auto; font-family: var(--mono); font-size: .85rem; line-height: 1.55;
+    font-variant-ligatures: none; font-feature-settings: "liga" 0, "calt" 0;
+  }
+  pre code { font-size: 1em; }
+  .tablewrap { overflow-x: auto; margin: 1rem 0 1.25rem; }
+  table { border-collapse: collapse; width: 100%; font-size: .93rem; line-height: 1.45; font-variant-numeric: tabular-nums; }
+  thead th {
+    text-align: left; font-size: .76rem; letter-spacing: .05em; text-transform: uppercase; color: var(--muted);
+    padding: .45rem .75rem .45rem 0; border-bottom: 1px solid var(--fg); white-space: nowrap;
+  }
+  tbody td { vertical-align: top; padding: .5rem .75rem .5rem 0; border-bottom: 1px solid var(--border); }
+  tbody tr:last-child td { border-bottom: 1px solid var(--fg); }
+  th.num, td.num { text-align: right; }
+  th:last-child, td:last-child { padding-right: 0; }
+  td.name { font-weight: 600; white-space: nowrap; }
+  .loss { color: var(--loss); font-weight: 600; }
+  .pass { color: var(--accent); font-weight: 600; }
+  .fn { font-size: .85rem; color: var(--muted); margin: -.5rem 0 1.2rem; }
+  figure {
+    margin: 1.5rem 0; padding: .75rem .75rem .5rem; background: var(--surface);
+    border: 1px solid var(--border); border-radius: 10px;
+  }
+  figure svg { width: 100%; height: auto; display: block; color: var(--fg); }
+  figcaption { font-size: .88rem; color: var(--muted); margin-top: .6rem; line-height: 1.5; }
+  figcaption .figno { font-weight: 600; color: var(--fg); }
+  svg text { font-size: 12.5px; fill: currentColor; font-family: inherit; }
+  svg text.h { font-weight: 600; font-size: 13px; }
+  svg text.b { font-weight: 600; }
+  svg text.s { fill: var(--muted); font-size: 11.5px; }
+  svg text.mono { font-family: var(--mono); font-size: 11px; }
+  svg text.tag { fill: var(--accent); font-family: var(--mono); font-size: 9.5px; letter-spacing: .08em; }
+  svg text.lbl { fill: var(--muted); font-size: 11px; }
+  svg .lane { fill: var(--surface-2); stroke: var(--border); stroke-width: 1; }
+  svg .fp, svg .dec { fill: var(--surface); stroke: var(--accent); stroke-width: 1.5; }
+  svg .box { fill: var(--surface-2); stroke: var(--border); stroke-width: 1; }
+  svg .end { fill: var(--surface-2); stroke: var(--accent); stroke-width: 1.5; }
+  svg .flow { fill: none; stroke: currentColor; stroke-width: 1.5; }
 </style>
 </head>
 <body>
-<div class="page">
-<p class="home"><a href="../../">&#8592; home</a></p>
-<header class="masthead">
-  <p class="eyebrow"><span>LLMs on Qualcomm silicon</span><span>Measurements as of August 2026</span></p>
-  <h1>The Serving Path Is the Model</h1>
-  <p class="dek">Same weights, same benchmark, same 4-bit quantization class: 0% through one serving stack, 100% through another — and it happened four times, with four different failure signatures.</p>
-  <p class="meta"><span>Krish Viswanathan</span><span>Qualcomm QCS9075 · Dragonwing IQ-9075 EVK</span><span>65-case tool-calling suite</span></p>
-</header>
+<main>
 
-<nav class="toc" aria-label="Sections"><span class="toc-label">Sections</span>
-<ol>
-<li><a href="#serving-path">What the serving path is</a></li>
-<li><a href="#benchmark">The benchmark, briefly</a></li>
-<li><a href="#ladder">The ladder</a></li>
-<li><a href="#counterpoint">The counterpoint: schema shape</a></li>
-<li><a href="#methodology">The methodology this forces</a></li>
-<li><a href="#leaderboards">What this means for eval leaderboards</a></li>
-<li><a href="#principles">Transferable principles</a></li>
-<li><a href="#current">Current as of</a></li>
-</ol>
-</nav>
+<p style="margin:0 0 1.5rem"><a href="../../" style="color:var(--muted);text-decoration:none;font-size:.9rem">&#8592; home</a></p>
+
+<h1>The serving path is the model</h1>
+<p class="subtitle">Same weights, same benchmark, same 4-bit quantization class: 0% through one serving stack, 100% through another, and it happened four times, with four different failure signatures.</p>
+
+<div class="abstract">
+<p>This post is about one measurement that changed how I evaluate small models for tool calling. Over the summer I ran several open-weight models through different serving stacks on a Qualcomm NPU and on a CPU, against the same 65-case benchmark. The same model scored 0% through one stack and 100% through another, and it happened four times, each with a different cause. The post walks through the four cases, shows that the tool-schema design most people blame first made no measurable difference, and ends with the checks I now run before blaming a model. Board: Qualcomm QCS9075 on the Dragonwing IQ-9075 EVK; models quantized to 4 bits; measurements from July and August 2026.</p>
+</div>
 
 <p>Start with the table that reorganized how I evaluate models.</p>
 
@@ -394,13 +348,6 @@ footer.colophon{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--hair
 <li>Base models tolerated template drift worse than instruct-tuned ones in the pairs measured here (inferred from two model pairs, not a general law); a base model's bad score through a nonstandard path says almost nothing about its ceiling.</li>
 </ul>
 
-<h2 id="current">Current as of</h2>
-
-<div class="note">
-<p>August 2026. Board: Qualcomm QCS9075 / Dragonwing IQ-9075 EVK. QAIRT 2.45.0.260326; GenieX developer preview v0.3.17-alpha → v0.3.19 → v0.4.0, with v0.4.1-alpha.2 published for the Gemma-4 retest (pending); Qualcomm Linux 1.5, 1.6, and 2.0-Ver1.0; llama.cpp 2026 Snapdragon-Linux builds (Hexagon backend merged upstream; CPU path used here). Production: Qwen3-4B-Instruct-2507, W4A16, 4K context, served natively by GenieX v0.4.0 on Qualcomm Linux 1.6. All benchmark figures reproducible from named result files in the project's <code>bench/results/</code> directory. Gemma-4-E4B NPU numbers are pending the v0.4.1-alpha.2 retest and should be treated as provisional.</p>
-</div>
-
-<footer class="colophon">Published 21 September 2026. Confidence labels in the text: measured, documented, inferred. <a href="../../">Home</a></footer>
-</div>
+</main>
 </body>
 </html>
