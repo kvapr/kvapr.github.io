@@ -167,9 +167,9 @@
 
 <p>Two counterweights keep the question alive. One 2026 survey measured an Adreno as the most energy-efficient decoder per token in its sample, ahead of a discrete laptop GPU and Apple's Metal path; for a device on a power budget that is the number that matters. And the GPU is the one accelerator present on every Qualcomm tier, which the NPU is not. The reason to want the GPU lane was never a faster LLM. It was a second lane, so the NPU can hold the camera pipeline while the language model runs elsewhere.</p>
 
-<h2 id="untested">What nobody has tried</h2>
+<h2 id="untested">A model under the cap, untested</h2>
 
-<p>The cap only kills single tensors over 256 MiB. A 4B-class model with a modest vocabulary may have an embedding under the cap, in which case it loads on the GPU today, on stock Qualcomm Linux, with no driver change. The check is a minute's work: inspect the GGUF, find the largest tensor, compare it with 256 MiB, then attempt the load. I have not run it yet, and I can find no published attempt of a language model on the Adreno GPU beside a vision model on the Hexagon NPU on any Snapdragon or Dragonwing part. That configuration is the experiment this series is building toward, and this post is its baseline.</p>
+<p>The cap only kills single tensors over 256 MiB, and I can find no published attempt at the obvious escape. A 4B-class model with a modest vocabulary may have an embedding under the cap, in which case it loads on the GPU today, on stock Qualcomm Linux, with no driver change. The check is a minute's work: inspect the GGUF, find the largest tensor, compare it with 256 MiB, then attempt the load. I have not run it yet. Nor can I find any published attempt of a language model on the Adreno GPU beside a vision model on the Hexagon NPU on any Snapdragon or Dragonwing part. That configuration is the experiment this series is building toward, and this post is its baseline.</p>
 
 <h2 id="principles">Transferable principles</h2>
 
