@@ -88,6 +88,12 @@
     <p class="desc">Putting the Jev idea (typed questions, calibrated probabilities, no text generation) next to a 4B agent on a Qualcomm NPU. A next-token readout of the same model gives the confirm gate a probability that flags 15 of its 20 dangerous confusions; a 150M encoder fine-tuned on two thousand rows beats the 4B as a router at 126 ms on the board's CPU; no small encoder learns the gate. Eight measured results and the division of labor that falls out.</p>
   </div>
 
+  <div class="post">
+    <a class="title" href="posts/fastrpc-the-npu-memory-wall/">FastRPC: the 1.5 GB wall between the CPU and the Qualcomm NPU</a>
+    <p class="date">September 2026</p>
+    <p class="desc">Every byte that reaches the Hexagon NPU crosses FastRPC. Its parts by name, the three failure classes it produces: a silent fallback to the CPU, a mapping ceiling that turns context length into a load-time decision, and cleanup mistakes that need a reboot. With the KV-cache arithmetic and a bring-up checklist.</p>
+  </div>
+
   <footer>
     <a href="https://x.com/imdasein">X</a> ·
     <a href="https://www.linkedin.com/in/krish-viswanathan/">LinkedIn</a> ·

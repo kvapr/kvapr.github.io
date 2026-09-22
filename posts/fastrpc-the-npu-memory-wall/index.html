@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FastRPC: the 1.5 GB wall between the CPU and the Qualcomm NPU</title>
+<style>
+  :root {
+    --bg: #ffffff; --fg: #1a1d23; --muted: #5a6270; --accent: #0b6e4f;
+    --qc: #3253dc; --border: #d8dde4; --loss: #b5382e;
+    --code-bg: #f3f5f8; --surface: #ffffff; --surface-2: #f3f5f8;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1216; --fg: #e6e9ee; --muted: #9aa4b2; --accent: #4dd2a5;
+      --qc: #8fa6ff; --border: #2a323c; --loss: #ea7d71;
+      --code-bg: #161b22; --surface: #141920; --surface-2: #1a2028;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 17px/1.65 -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  }
+  main { max-width: 720px; margin: 0 auto; padding: 2.5rem 1.25rem 4rem; }
+  h1 { font-size: 1.7rem; line-height: 1.25; margin: 0 0 .25rem; }
+  h2 { font-size: 1.25rem; margin: 2.2rem 0 .6rem; padding-top: .9rem; border-top: 1px solid var(--border); }
+  h3 { font-size: 1.05rem; margin: 1.8rem 0 .4rem; }
+  .subtitle { color: var(--muted); margin: 0 0 1.25rem; }
+  .abstract {
+    margin: 0 0 2rem; padding: .9rem 1.1rem; background: var(--surface-2);
+    border-left: 3px solid var(--accent); border-radius: 0 8px 8px 0;
+  }
+  .abstract p { margin: 0; }
+  p { margin: .8rem 0; }
+  a { color: var(--qc); }
+  ul, ol { padding-left: 1.4rem; }
+  li { margin: .35rem 0; }
+  code { font-family: var(--mono); font-size: .88em; font-variant-ligatures: none; font-feature-settings: "liga" 0, "calt" 0; }
+  p code, li code, td code { background: var(--code-bg); padding: .05em .3em; border-radius: 3px; }
+  pre {
+    background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px;
+    padding: .8rem 1rem; overflow-x: auto; font-family: var(--mono); font-size: .85rem; line-height: 1.55;
+    font-variant-ligatures: none; font-feature-settings: "liga" 0, "calt" 0;
+  }
+  pre code { font-size: 1em; }
+  .tablewrap { overflow-x: auto; margin: 1rem 0 1.25rem; }
+  table { border-collapse: collapse; width: 100%; font-size: .93rem; line-height: 1.45; font-variant-numeric: tabular-nums; }
+  thead th {
+    text-align: left; font-size: .76rem; letter-spacing: .05em; text-transform: uppercase; color: var(--muted);
+    padding: .45rem .75rem .45rem 0; border-bottom: 1px solid var(--fg); white-space: nowrap;
+  }
+  tbody td { vertical-align: top; padding: .5rem .75rem .5rem 0; border-bottom: 1px solid var(--border); }
+  tbody tr:last-child td { border-bottom: 1px solid var(--fg); }
+  th.num, td.num { text-align: right; }
+  th:last-child, td:last-child { padding-right: 0; }
+  td.name { font-weight: 600; white-space: nowrap; }
+  .loss { color: var(--loss); font-weight: 600; }
+  .pass { color: var(--accent); font-weight: 600; }
+  .fn { font-size: .85rem; color: var(--muted); margin: -.5rem 0 1.2rem; }
+  figure {
+    margin: 1.5rem 0; padding: .75rem .75rem .5rem; background: var(--surface);
+    border: 1px solid var(--border); border-radius: 10px;
+  }
+  figure svg { width: 100%; height: auto; display: block; color: var(--fg); }
+  figcaption { font-size: .88rem; color: var(--muted); margin-top: .6rem; line-height: 1.5; }
+  figcaption .figno { font-weight: 600; color: var(--fg); }
+  svg text { font-size: 12.5px; fill: currentColor; font-family: inherit; }
+  svg text.h { font-weight: 600; font-size: 13px; }
+  svg text.b { font-weight: 600; }
+  svg text.s { fill: var(--muted); font-size: 11.5px; }
+  svg text.mono { font-family: var(--mono); font-size: 11px; }
+  svg text.tag { fill: var(--accent); font-family: var(--mono); font-size: 9.5px; letter-spacing: .08em; }
+  svg text.lbl { fill: var(--muted); font-size: 11px; }
+  svg .lane { fill: var(--surface-2); stroke: var(--border); stroke-width: 1; }
+  svg .fp, svg .dec { fill: var(--surface); stroke: var(--accent); stroke-width: 1.5; }
+  svg .box { fill: var(--surface-2); stroke: var(--border); stroke-width: 1; }
+  svg .end { fill: var(--surface-2); stroke: var(--accent); stroke-width: 1.5; }
+  svg .flow { fill: none; stroke: currentColor; stroke-width: 1.5; }
+  .update { margin: 0 0 1.5rem; font-size: .95rem; color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+<p style="margin:0 0 1.5rem"><a href="../../" style="color:var(--muted);text-decoration:none;font-size:.9rem">&#8592; home</a></p>
+
+<h1>FastRPC: the 1.5 GB wall between the CPU and the Qualcomm NPU</h1>
+<p class="subtitle">Stubs, skels, and DMA heaps: the plumbing every Hexagon NPU workload lives on, and the three classes of failure it produces.</p>
+
+<div class="abstract">
+<p>Every byte that reaches the Hexagon NPU crosses a boundary called FastRPC, and three whole classes of production failure are consequences of how that boundary works: a silent fallback to the CPU, a hard memory ceiling that turns context length into a load-time coin flip, and cleanup mistakes that leave the board needing a reboot. This post makes the boundary visible: its parts by name, each failure with its fingerprint, the KV-cache arithmetic that predicts the ceiling, and a bring-up checklist. It is the NPU deep dive behind <a href="../one-memory-three-views/">the memory-hierarchy post</a>. Board: Qualcomm QCS9075 on the Dragonwing IQ-9075 EVK, Hexagon v73, Qualcomm Linux, QAIRT 2.45. Every failure described was observed on it.</p>
+</div>
+
+<p>The bundle loaded perfectly. An 8-billion-parameter model, compiled for a 16K context, weights mapping into memory without complaint. Then the first request came in, and the runtime answered with:</p>
+
+<pre><code>fastrpc_mmap … Cannot allocate memory</code></pre>
+
+<p>Error 6001. Every subsequent request, the same. The model was there, its weights had mapped, but no inference could run, because there was no room left to map the thing inference actually needs. And when I did the obvious thing, killed the process and retried, the board did not recover cleanly: the kernel began retrying a registration that could never succeed, flooding the console, and the box needed a reboot to come back.</p>
+
+<p>This is the least glamorous part of running a model on this silicon, and possibly the most useful. You cannot debug what you cannot see, and FastRPC is invisible until it breaks.</p>
+
+<h2 id="anatomy">FastRPC anatomy: two processors, one phone line</h2>
+
+<p>The CPU and the Hexagon NPU share the board's DRAM but not an address space. To run a computation on the DSP, the CPU makes a remote procedure call across a bridge, FastRPC, and that call has a specific machinery you have to know by name to debug.</p>
+
+<figure>
+<svg viewBox="0 0 760 300" role="img" aria-label="FastRPC anatomy. A CPU process calls through a stub library into the kernel FastRPC driver, which dispatches to a compute DSP domain where a skeleton library runs the kernels. Tensors travel in DMA-heap buffers that must be mapped into the DSP's address window of about 1 GB per domain; the model's weights and the KV cache are the tenants of that window.">
+<defs><marker id="arf" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5 0 10z" fill="currentColor"/></marker></defs>
+<rect class="box" x="20" y="30" width="200" height="90" rx="6"/>
+<text class="tag" x="32" y="48">CPU SIDE</text>
+<text class="b" x="32" y="70">Your process</text>
+<text class="s" x="32" y="88">server, tokenizer, sampling</text>
+<text class="mono" x="32" y="106">stub: libcdsprpc.so</text>
+<rect class="box" x="280" y="44" width="180" height="62" rx="6"/>
+<text class="b" x="370" y="70" text-anchor="middle">Kernel FastRPC driver</text>
+<text class="mono" x="370" y="90" text-anchor="middle">/dev/fastrpc-cdsp</text>
+<rect class="box" x="520" y="30" width="220" height="90" rx="6"/>
+<text class="tag" x="532" y="48">DSP SIDE</text>
+<text class="b" x="532" y="70">Compute DSP domain</text>
+<text class="s" x="532" y="88">runs the kernels</text>
+<text class="mono" x="532" y="106">skel: hexagon-v73/unsigned</text>
+<line class="flow" x1="220" y1="75" x2="278" y2="75" marker-end="url(#arf)"/>
+<text class="lbl" x="249" y="67" text-anchor="middle">call</text>
+<line class="flow" x1="460" y1="75" x2="518" y2="75" marker-end="url(#arf)"/>
+<text class="lbl" x="489" y="67" text-anchor="middle">dispatch</text>
+<rect class="lane" x="20" y="160" width="720" height="44" rx="6"/>
+<text class="b" x="380" y="179" text-anchor="middle">DMA-heap buffers in shared DRAM</text>
+<text class="s" x="380" y="195" text-anchor="middle">tensors both sides can map: weights, KV cache, activations</text>
+<line class="flow" x1="120" y1="120" x2="120" y2="158" marker-end="url(#arf)"/>
+<line class="flow" x1="630" y1="158" x2="630" y2="122" marker-end="url(#arf)"/>
+<text class="lbl" x="644" y="146">mapped</text>
+<rect class="fp" x="20" y="232" width="720" height="50" rx="6"/>
+<text class="tag" x="32" y="250">THE WALL</text>
+<text class="b" x="32" y="270">DSP address window: about 1 GB per domain, 1 to 1.5 GB per inference context</text>
+<text class="s" x="728" y="270" text-anchor="end">weights + KV cache must fit</text>
+</svg>
+<figcaption><span class="figno">Figure 1.</span> Every byte the NPU touches crosses this boundary. The DRAM is shared; the address window is not, and it is the wall.</figcaption>
+</figure>
+
+<p><strong>The stub, CPU side.</strong> Your process links <code>libcdsprpc.so</code>, the CPU-side stub. It is the client end of the phone line: it marshals arguments, hands buffers to the kernel FastRPC driver, and blocks waiting for the DSP to answer.</p>
+
+<p><strong>The skel, DSP side.</strong> The code that runs on the Hexagon is packaged as a skel, short for skeleton: a DSP-compiled library loaded onto the compute DSP at runtime. The runtime finds skels through an environment variable, and here is an important misnomer on the platform:</p>
+
+<pre><code>ADSP_LIBRARY_PATH=/opt/qairt/2.45.0.260326/lib/hexagon-v73/unsigned</code></pre>
+
+<p>The variable says ADSP, audio DSP, but it governs the cDSP, the compute DSP, the one running your model. The name is a historical artifact. If this variable is wrong, unset, or points at the wrong Hexagon version, the skel is not found, and that failure is silent. Note also the <code>unsigned</code> at the end of the path: that is the unsigned protection domain. The DSP can run code in a signed domain, vendor-signed, for secure workloads, or an unsigned one; open LLM work runs in the unsigned one, which is why the skels live there.</p>
+
+<p><strong>The shared buffers.</strong> The CPU and the DSP exchange tensors through DMA heaps, memory both can map:</p>
+
+<pre><code>/dev/dma_heap/system
+/dev/dma_heap/qcom,cma-secure-cdsp</code></pre>
+
+<p><strong>The device nodes.</strong> The bridge to each DSP domain is a device file, <code>/dev/fastrpc-cdsp</code> and <code>/dev/fastrpc-cdsp1</code> for the two compute domains on this chip, and the kernel driver ferries calls across. That is the apparatus end to end: stub, kernel driver, DSP domain, skel, with tensors passed in DMA-heap buffers. Keep the picture; all three failure classes are failures of this picture.</p>
+
+<h2 id="fallback">Failure class 1: the silent CPU fallback</h2>
+
+<p>Here is the most common way people lose a week on this platform, and it produces no error at all.</p>
+
+<p>If the library path is unset or wrong, the runtime cannot load the DSP skel. On the llama.cpp path especially, the sensible-seeming behavior kicks in: it falls back to the CPU, runs your model correctly, with the right output, and never tells you the NPU was never involved. You asked for the NPU on the command line, you got a coherent answer, you shipped it, and it ran on the CPU the whole time.</p>
+
+<p>This is the number-one cause of "the NPU flag did nothing." The flag did do something: it asked for the NPU, the skel was not found, and the graceful fallback swallowed the failure. The lesson is the one every measurement on this blog rests on: never trust that offload happened; measure it. The <a href="../same-binary-cpu-vs-npu/">same-binary post</a> is what that measurement looks like, and when it says everything ran on the CPU, the first thing to check is whether the library path is set and points at the skels for your Hexagon version, v73 here, not v75.</p>
+
+<h2 id="wall">Failure class 2: the wall</h2>
+
+<p>Now the failure from the cold open, and the arithmetic that predicts it.</p>
+
+<p>Each inference context needs contiguous DSP-side memory mappings, and there is a hard ceiling on how much can be mapped. The DSP's DMA address space is about 1 GB per compute domain; in practice an inference context gets roughly 1 to 1.5 GB of mapped memory before allocations start to fail. Two things compete for it: the model's working set and the KV cache, the per-token attention memory that grows with context length. Weights can be handled with mapping strategies that ease the pressure, an 8B model that failed to map in five parts of up to 1.2 GB loaded fine in eight parts each under 1 GB. The KV buffer is a single allocation that scales linearly with context, and it has to fit.</p>
+
+<p>So "how long a context can I run?" is not a software preference. It is a memory-budgeting problem against a fixed hardware ceiling, and you can do the sum in advance. For a 4B model with 8-bit KV and grouped-query attention, the cache costs about 72 KB per token; for an 8B model about 76 KB.</p>
+
+<div class="tablewrap">
+<table>
+<thead><tr><th>Compiled context</th><th class="num">KV buffer, 4B model</th><th>Under the ceiling?</th></tr></thead>
+<tbody>
+<tr><td class="name">4K</td><td class="num">about 344 MB</td><td>yes; proven stable, the deployed configuration</td></tr>
+<tr><td class="name">8K</td><td class="num">about 700 MB</td><td>yes; measured, at about twice the per-turn time</td></tr>
+<tr><td class="name">16K</td><td class="num">1.2 to 1.5 GB</td><td>no; error 6001, reproduced with an 8B 16K bundle</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>The 16K row is the cold open. The weights mapped; then the KV allocation collided with the ceiling, <code>fastrpc_mmap</code> returned "Cannot allocate memory", and every request failed at the mapping step with error 6001. Not a slow context; a non-loading one. On this silicon a too-long context does not degrade gracefully. It fails to allocate, hard, at load or at the first request.</p>
+
+<p>When FastRPC mapping is under pressure, the kernel log shows it. From this board's <code>dmesg</code>:</p>
+
+<pre><code>qcom,fastrpc-cb 26300000.remoteproc:glink-edge:fastrpc:compute-cb@2: failed to map buffer, fd = 120
+qcom,fastrpc-cb ...:compute-cb@3: failed to map buffer, fd = 120</code></pre>
+
+<p>Those "failed to map buffer" lines on the FastRPC compute context banks are the fingerprint of the boundary refusing an allocation. When you see them, you are not looking at a model bug. You are looking at the wall.</p>
+
+<p>A third, smaller form of the same wall: loading a bundle in many parts can fail on the fourth part not because memory ran out but because the kernel's default limit on memory mappings per process was too low for that many large maps. Raising <code>vm.max_map_count</code> fixed it, and the setting is lost on a reflash, so it belongs in the board image.</p>
+
+<h3>The consequence: context length is a compile-time decision</h3>
+
+<p>This is why the compiled bundle's context length is baked in and cannot be raised with a runtime flag. The context window is not a configuration knob you turn; it is a hardware budget you commit to when you compile, and getting it wrong means the artifact does not load at all. <a href="../context-window-8k/">The context-window post</a> is the other half of the trade: the 8K build fits, and runs about 1.9 times slower per turn, because a fixed-shape graph pays for the whole window on every token. Choose the window deliberately: enough for the workload, comfortably under the KV ceiling, and no more.</p>
+
+<p>It also dictates a server-layer rule: reject oversize prompts before they reach the engine. If the context is 4096 and a 6000-token request arrives, the right behavior is an immediate, clean HTTP error, not handing it to the runtime and discovering the wall the hard way. The soak test deliberately fires 6K-token prompts at the 4K deployment to prove they are rejected instantly and cleanly, twelve of twelve, before any DSP work. Defending the wall at the front door is part of a correct deployment, not an afterthought.</p>
+
+<h2 id="hygiene">Failure class 3: lifecycle hygiene, or how to brick inference until reboot</h2>
+
+<p>The third class is not about memory size. It is about cleanup, and it is the one that produces the reboot-requiring hang.</p>
+
+<p><strong>Per request: reset, do not recreate.</strong> Between requests you must clear the dialog's state. There are two ways, and only one is safe. Recreating the whole context each time leaks the DSP's I/O virtual address space; do it enough and inference bricks until reboot. The correct move is to reset the existing dialog in place. In the serving shim I ran before moving to the vendor runtime, it was one line, deliberately chosen:</p>
+
+<pre><code>rc = lib.GenieDialog_query(dialog, prompt, SENTENCE_COMPLETE, cb, None)
+reset_rc = lib.GenieDialog_reset(dialog)   # reset, NOT recreate</code></pre>
+
+<p>One long-lived dialog, reset between turns. Never a fresh context per request.</p>
+
+<p><strong>On shutdown: free, in order.</strong> Here is the one that caused the console flood. If you kill the process while it holds live FastRPC shared-buffer mappings, you orphan secure-world buffer registrations that now have no owner. The kernel then tries to re-register them, fails, retries, fails, forever: a measured flood on the order of 100,000 console lines, until you reboot. The cleanup obligation was important enough to write into the shim's own docstring:</p>
+
+<pre><code>def close(self):
+    """Free NPU resources in order. Killing the process with live fastrpc
+    shared-buffer mappings orphans QTEE shm-bridges (kernel then retries
+    registration forever; console spam until reboot), so this MUST run
+    on shutdown."""
+    lib.GenieDialog_free(dialog)
+    lib.GenieDialogConfig_free(cfg_handle)</code></pre>
+
+<p>The rule: install a signal handler, free the dialog and the configuration on <code>SIGTERM</code>, and never kill a live NPU process with <code>kill -9</code> if you can avoid it. The DSP holds resources that normal process teardown does not know about; you have to hand them back explicitly.</p>
+
+<h2 id="tax">The per-token tax</h2>
+
+<p>One last thing FastRPC explains, and it is the most counterintuitive result on this board. FastRPC is a round trip: marshal, call, wait, copy back. A token's worth of decode work is not one round trip but many, and they add up to tens of milliseconds of boundary overhead per token before any actual math. For prefill that is negligible, amortized across a batch of prompt tokens. Decode generates one token at a time, so every token pays the tax in full, and on a small model, where the matrix math per token is tiny, the tax is a large share of the time. That is why the CPU, which has no boundary to cross, holds its own on decode while losing prefill by five to seven times. <a href="../same-binary-cpu-vs-npu/">The same-binary post</a> has the measurement; <a href="../one-memory-three-views/">the memory-hierarchy post</a> has the other half of the reason, the shared bandwidth.</p>
+
+<h2 id="checklist">A checklist: verifying the FastRPC path on a new board</h2>
+
+<p>When you bring up NPU inference on a fresh board and want to know the plumbing is sound:</p>
+
+<ol>
+<li><strong>Stub present?</strong> <code>find / -name libcdsprpc.so</code>. It is your CPU-side client.</li>
+<li><strong>Device nodes present?</strong> <code>ls /dev/fastrpc-cdsp*</code>. No node, no compute DSP.</li>
+<li><strong>Library path set, and pointing at your Hexagon version?</strong> <code>hexagon-v73/unsigned</code> for this board. Wrong version means a silent CPU fallback.</li>
+<li><strong>Skels actually there?</strong> List the directory the variable points at; you should see the HTP and QNN skels.</li>
+<li><strong>Prove offload, do not assume it.</strong> Run a CPU-versus-NPU A/B with the same binary. If the numbers do not move, the skel is not loading; go back to step 3.</li>
+<li><strong>Budget the KV cache before choosing a context length.</strong> About 72 KB per token for a 4B model with 8-bit KV; keep the buffer well under the ceiling.</li>
+<li><strong>Reject oversize prompts at the server.</strong> Defend the wall at the front door.</li>
+<li><strong>Free on shutdown.</strong> Signal handler, then free the dialog and the configuration. Never orphan the buffer registrations.</li>
+</ol>
+
+<p>Run that list and FastRPC stops being the invisible thing that breaks and becomes a boundary you can reason about.</p>
+
+<h2 id="principles">Transferable principles</h2>
+
+<ul>
+<li>Everything crosses FastRPC. The boundary, stub, skel, and DMA-heap buffers, is the substrate every NPU workload lives on. Learn its parts; they are where the failures are.</li>
+<li>The library path variable governs the compute DSP despite its name, and its failure is silent. A wrong or unset path reverts everything to the CPU with no error. First thing to check when offload "did nothing."</li>
+<li>Context length is a hardware memory budget, not a configuration knob. The KV cache competes for a mapping ceiling of about 1 to 1.5 GB per context; over budget does not slow down, it fails to load. Do the KV arithmetic up front.</li>
+<li>The DSP holds resources your process teardown does not know about. Reset dialogs, do not recreate them; free explicitly on shutdown. Install the signal handler.</li>
+<li>The round-trip tax is why small models decode about as fast on the CPU. Boundary cost, not compute, is the bottleneck at decode; the accelerator's win is prefill and performance per watt.</li>
+<li>The same physics applies to any accelerator behind a call boundary with its own address space, not just Hexagon. Budget for the boundary, not just the FLOPs.</li>
+</ul>
+
+</main>
+</body>
+</html>
