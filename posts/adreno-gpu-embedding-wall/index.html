@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Why LLMs won't load on the Adreno GPU: the 256 MiB embedding wall</title>
+<style>
+  :root {
+    --bg: #ffffff; --fg: #1a1d23; --muted: #5a6270; --accent: #0b6e4f;
+    --qc: #3253dc; --border: #d8dde4; --loss: #b5382e;
+    --code-bg: #f3f5f8; --surface: #ffffff; --surface-2: #f3f5f8;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1216; --fg: #e6e9ee; --muted: #9aa4b2; --accent: #4dd2a5;
+      --qc: #8fa6ff; --border: #2a323c; --loss: #ea7d71;
+      --code-bg: #161b22; --surface: #141920; --surface-2: #1a2028;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 17px/1.65 -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  }
+  main { max-width: 720px; margin: 0 auto; padding: 2.5rem 1.25rem 4rem; }
+  h1 { font-size: 1.7rem; line-height: 1.25; margin: 0 0 .25rem; }
+  h2 { font-size: 1.25rem; margin: 2.2rem 0 .6rem; padding-top: .9rem; border-top: 1px solid var(--border); }
+  h3 { font-size: 1.05rem; margin: 1.8rem 0 .4rem; }
+  .subtitle { color: var(--muted); margin: 0 0 1.25rem; }
+  .abstract {
+    margin: 0 0 2rem; padding: .9rem 1.1rem; background: var(--surface-2);
+    border-left: 3px solid var(--accent); border-radius: 0 8px 8px 0;
+  }
+  .abstract p { margin: 0; }
+  p { margin: .8rem 0; }
+  a { color: var(--qc); }
+  ul, ol { padding-left: 1.4rem; }
+  li { margin: .35rem 0; }
+  code { font-family: var(--mono); font-size: .88em; font-variant-ligatures: none; font-feature-settings: "liga" 0, "calt" 0; }
+  p code, li code, td code { background: var(--code-bg); padding: .05em .3em; border-radius: 3px; }
+  pre {
+    background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px;
+    padding: .8rem 1rem; overflow-x: auto; font-family: var(--mono); font-size: .85rem; line-height: 1.55;
+    font-variant-ligatures: none; font-feature-settings: "liga" 0, "calt" 0;
+  }
+  pre code { font-size: 1em; }
+  .tablewrap { overflow-x: auto; margin: 1rem 0 1.25rem; }
+  table { border-collapse: collapse; width: 100%; font-size: .93rem; line-height: 1.45; font-variant-numeric: tabular-nums; }
+  thead th {
+    text-align: left; font-size: .76rem; letter-spacing: .05em; text-transform: uppercase; color: var(--muted);
+    padding: .45rem .75rem .45rem 0; border-bottom: 1px solid var(--fg); white-space: nowrap;
+  }
+  tbody td { vertical-align: top; padding: .5rem .75rem .5rem 0; border-bottom: 1px solid var(--border); }
+  tbody tr:last-child td { border-bottom: 1px solid var(--fg); }
+  th.num, td.num { text-align: right; }
+  th:last-child, td:last-child { padding-right: 0; }
+  td.name { font-weight: 600; white-space: nowrap; }
+  .loss { color: var(--loss); font-weight: 600; }
+  .pass { color: var(--accent); font-weight: 600; }
+  .fn { font-size: .85rem; color: var(--muted); margin: -.5rem 0 1.2rem; }
+  figure {
+    margin: 1.5rem 0; padding: .75rem .75rem .5rem; background: var(--surface);
+    border: 1px solid var(--border); border-radius: 10px;
+  }
+  figure svg { width: 100%; height: auto; display: block; color: var(--fg); }
+  figcaption { font-size: .88rem; color: var(--muted); margin-top: .6rem; line-height: 1.5; }
+  figcaption .figno { font-weight: 600; color: var(--fg); }
+  svg text { font-size: 12.5px; fill: currentColor; font-family: inherit; }
+  svg text.h { font-weight: 600; font-size: 13px; }
+  svg text.b { font-weight: 600; }
+  svg text.s { fill: var(--muted); font-size: 11.5px; }
+  svg text.mono { font-family: var(--mono); font-size: 11px; }
+  svg text.tag { fill: var(--accent); font-family: var(--mono); font-size: 9.5px; letter-spacing: .08em; }
+  svg text.lbl { fill: var(--muted); font-size: 11px; }
+  svg .lane { fill: var(--surface-2); stroke: var(--border); stroke-width: 1; }
+  svg .fp, svg .dec { fill: var(--surface); stroke: var(--accent); stroke-width: 1.5; }
+  svg .box { fill: var(--surface-2); stroke: var(--border); stroke-width: 1; }
+  svg .end { fill: var(--surface-2); stroke: var(--accent); stroke-width: 1.5; }
+  svg .flow { fill: none; stroke: currentColor; stroke-width: 1.5; }
+  .update { margin: 0 0 1.5rem; font-size: .95rem; color: var(--muted); }
+  svg .axis { stroke: var(--border); stroke-width: 1; }
+  svg .barfill { fill: var(--accent); }
+  svg .cap { stroke: var(--loss); stroke-width: 1.5; stroke-dasharray: 5 4; }
+  svg text.capl { fill: var(--loss); font-size: 11.5px; font-weight: 600; }
+</style>
+</head>
+<body>
+<main>
+<p style="margin:0 0 1.5rem"><a href="../../" style="color:var(--muted);text-decoration:none;font-size:.9rem">&#8592; home</a></p>
+
+<h1>Why LLMs won't load on the Adreno GPU: the 256 MiB embedding wall</h1>
+<p class="subtitle">Two months of attempts, three Qualcomm SoCs, one tensor, and one driver number that no document mentions.</p>
+
+<div class="abstract">
+<p>Before this series settled on the NPU, I spent about two months trying to serve language models on the Adreno GPU, first on a QCS6490 and then on the QCS9075, through llama.cpp's OpenCL backend. Every attempt died at model load. This post is the root cause and everything found around it: the single tensor that fails, why quantization does not help, where the 256 MiB limit comes from, what I measured on two boards, what the ecosystem has done about it since, and the one configuration nobody has tried. It is the GPU deep dive behind <a href="../one-memory-three-views/">the memory-hierarchy post</a>. Boards: Dragonwing IQ-9075 EVK with the Adreno 663, on Qualcomm Linux 1.5 and 1.6; earlier attempts on the QCS6490's Adreno 643. Confidence labels as usual: measured, documented, inferred.</p>
+</div>
+
+<h2 id="why">Why try the GPU at all</h2>
+
+<p>The appeal was never speed. If the language model ran on the GPU, the NPU would be free for other work, and in an edge product that other work is video analytics. One box, a camera pipeline on the accelerator, an assistant on the graphics core. The Adreno 663 is a capable OpenCL device, llama.cpp has an OpenCL backend that Qualcomm itself maintains, and the models are small. It looked like the easy half of the design.</p>
+
+<h2 id="symptom">The symptom</h2>
+
+<p>Every model in the lineup died at load with an allocation failure. Not slow, not wrong: unloaded. The behavior was identical on the QCS6490 and the QCS9075, and the same cap later showed up on the QCS8550, so it was not one board or one driver build. Root-causing it took three independent checks that agreed: a custom parser over the GGUF files, the reference <code>gguf-py</code> tooling, and llama.cpp's own runtime output. All three pointed at the same place.</p>
+
+<h2 id="cause">The cause: one tensor</h2>
+
+<p>Adreno's OpenCL driver caps a single allocation at 256 MiB. llama.cpp does not need a model to fit in one allocation; it packs a model across as many buffers as it takes, and whole models far larger than 256 MiB load fine. What cannot be split is a single tensor, and in every model tested exactly one tensor exceeds the cap: the token-embedding matrix. No attention or MLP tensor comes close, even at 16-bit precision for 3B and 4B models.</p>
+
+<figure>
+<svg viewBox="0 0 760 250" role="img" aria-label="Bar chart of token-embedding tensor sizes for three models against the Adreno OpenCL single-allocation cap of 256 MiB. Llama-3.2-3B, 308 MB; Phi-4-Mini, 481 MB; Qwen3.5-4B, 497 MB. All three exceed the cap. Every other tensor in these models is under it.">
+<line class="axis" x1="170" y1="20" x2="170" y2="200"/>
+<text class="b" x="150" y="45" text-anchor="end">Llama-3.2-3B</text>
+<text class="s" x="150" y="61" text-anchor="end">128K vocabulary</text>
+<rect class="barfill" x="170" y="30" width="332" height="18" rx="0"/>
+<text class="b" x="510" y="44">308 MB</text>
+<text class="b" x="150" y="99" text-anchor="end">Phi-4-Mini</text>
+<text class="s" x="150" y="115" text-anchor="end">200K vocabulary</text>
+<rect class="barfill" x="170" y="84" width="518" height="18" rx="0"/>
+<text class="b" x="696" y="98">481 MB</text>
+<text class="b" x="150" y="153" text-anchor="end">Qwen3.5-4B</text>
+<text class="s" x="150" y="169" text-anchor="end">248K vocabulary</text>
+<rect class="barfill" x="170" y="138" width="535" height="18" rx="0"/>
+<text class="b" x="713" y="152">497 MB</text>
+<line class="cap" x1="446" y1="14" x2="446" y2="200"/>
+<text class="capl" x="452" y="24">256 MiB cap, one allocation</text>
+<text class="s" x="170" y="228">token-embedding tensor, 4-bit model, embeddings kept at higher precision by llama.cpp</text>
+</svg>
+<figcaption><span class="figno">Figure 1.</span> The embedding wall. Every attention and MLP tensor in these models is under 256 MiB; the token-embedding matrix is over it, and its size follows the vocabulary, not the parameter count.</figcaption>
+</figure>
+
+<p>Three things follow from that. The embedding's size is driven by vocabulary size, not parameter count, so a larger vocabulary makes a smaller model harder to load. Quantization does not rescue it, because llama.cpp keeps embeddings at a higher precision than the rest of a 4-bit model; the sizes in the figure are from Q4 files. And a newer model is more likely to hit the wall than an older one, since vocabularies have grown: Llama-3.2-3B's 128K tokens give a 308 MB embedding, Phi-4-Mini's 200K give 481 MB, Qwen3.5-4B's 248K give 497 MB.</p>
+
+<p>The consequence, measured: no model in the lineup loads with full GPU offload without either splitting the embedding or leaving it on the CPU.</p>
+
+<h2 id="number">Where 256 comes from</h2>
+
+<p>The number is not a hardware limit, and it is not in Qualcomm's OpenCL guide. Adreno 6xx drivers report 1 GiB of global memory regardless of the physical RAM behind them, and the OpenCL specification's minimum for the largest single allocation is a quarter of global memory. A quarter of 1 GiB is 256 MiB. That mechanism is inferred from the specification and the reported values; the values themselves are measured. On 27 August I probed two IQ-9075 boards, one on Qualcomm Linux 1.5 and one on 1.6:</p>
+
+<div class="tablewrap">
+<table>
+<thead><tr><th>Property</th><th>Qualcomm Linux 1.5</th><th>Qualcomm Linux 1.6</th></tr></thead>
+<tbody>
+<tr><td class="name">Reported global memory</td><td>1 GiB</td><td>1 GiB</td></tr>
+<tr><td class="name">Largest single allocation</td><td>256 MiB; one byte over fails</td><td>256 MiB; one byte over fails</td></tr>
+<tr><td class="name">OpenCL version</td><td>3.0, stock</td><td>3.0, stock</td></tr>
+<tr><td class="name">Large-buffer driver extension</td><td>absent</td><td>absent</td></tr>
+<tr><td class="name">Vulkan driver</td><td>1.2.140</td><td>1.2.140</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>Two releases apart, the GPU stack did not move. These are, as far as I can find, the first public capability dumps for the Adreno 663. Newer Adreno generations, the 7xx and 8xx parts in current phones, report a 1 GiB cap instead, still a fixed number rather than one that scales with RAM.</p>
+
+<h2 id="ecosystem">What the ecosystem did about it</h2>
+
+<p>More than I expected, and none of it reaches this silicon yet.</p>
+
+<p>llama.cpp gained a dedicated escape hatch in March 2026, days after my testing window: an opt-in path that asks the driver for a large buffer through a Qualcomm extension. It needs two things, OpenCL 3.0 and the driver-side extension. The boards have the first, which was a surprise; the research had assumed 2.x from the platform documentation, and the probe corrected it. They lack the second, and the extension is stated for the 7xx and 8xx generations. So the ask to Qualcomm for these parts shrinks to one item: ship the extension.</p>
+
+<p>Vulkan looked like the other way around the cap, and it is not. llama.cpp's Vulkan floor dropped to 1.2, so the 1.2.140 driver passes the version check on paper. In practice every report I could find of llama.cpp's Vulkan backend on any Adreno fails: load failures, lost devices, or gibberish, and the proprietary driver has its own wall, a 128 MiB limit on how much of a buffer one descriptor can see. The live Vulkan lane is the open-source Mesa driver, Turnip, which reaches Vulkan 1.3 and ships in Ubuntu with GPU firmware for the QCS6490 and SA8775P families. Whether it runs on the QCS9075 is unevidenced, and whether llama.cpp's Vulkan kernels then behave on Adreno is a separate question nobody has answered.</p>
+
+<h2 id="worth">Would it even be worth it</h2>
+
+<p>Suppose the wall were gone. The GPU shares the board's DRAM and its bandwidth with the CPU and the NPU, and decode is bandwidth-bound, so the GPU cannot beat the other two where it matters most for chat. The best published Adreno decode figure for an 8B model, on a newer flagship part, is about 13 tokens per second, in the same range as this board's NPU. On speed alone the GPU offered nothing.</p>
+
+<p>Two counterweights keep the question alive. One 2026 survey measured an Adreno as the most energy-efficient decoder per token in its sample, ahead of a discrete laptop GPU and Apple's Metal path; for a device on a power budget that is the number that matters. And the GPU is the one accelerator present on every Qualcomm tier, which the NPU is not. The reason to want the GPU lane was never a faster LLM. It was a second lane, so the NPU can hold the camera pipeline while the language model runs elsewhere.</p>
+
+<h2 id="untested">What nobody has tried</h2>
+
+<p>The cap only kills single tensors over 256 MiB. A 4B-class model with a modest vocabulary may have an embedding under the cap, in which case it loads on the GPU today, on stock Qualcomm Linux, with no driver change. The check is a minute's work: inspect the GGUF, find the largest tensor, compare it with 256 MiB, then attempt the load. I have not run it yet, and I can find no published attempt of a language model on the Adreno GPU beside a vision model on the Hexagon NPU on any Snapdragon or Dragonwing part. That configuration is the experiment this series is building toward, and this post is its baseline.</p>
+
+<h2 id="principles">Transferable principles</h2>
+
+<ul>
+<li>On Adreno, the OpenCL limit that matters is per allocation, not per model. Check the largest single tensor before assuming a model will not fit.</li>
+<li>Vocabulary size, not parameter count, decides whether a model clears the wall. Newer models with larger vocabularies are more exposed, and quantization does not help, because embeddings stay at higher precision.</li>
+<li>The 256 MiB figure is a driver policy derived from a hardcoded 1 GiB global-memory report, not a property of the RAM. It is undocumented; measure it on your board.</li>
+<li>The upstream fix exists and does not apply here. Before relying on an escape hatch, check the driver extension list, not the OpenCL version.</li>
+<li>A GPU lane on this class of board is about a second tenant for the chip, not a faster model. Judge it by what it frees, and by energy per token, not by decode speed.</li>
+</ul>
+
+</main>
+</body>
+</html>
