@@ -157,7 +157,7 @@
 
 <p>Here is an easy way to lose a week on this platform, and it produces no error at all.</p>
 
-<p>If the library path is unset or wrong, the runtime cannot load the DSP skel. On the llama.cpp path especially, the sensible-seeming behavior kicks in: it falls back to the CPU, runs your model correctly, with the right output, and never tells you the NPU was never involved. You asked for the NPU on the command line, you got a coherent answer, you shipped it, and it ran on the CPU the whole time.</p>
+<p>If the library path is unset or wrong, the runtime cannot load the DSP skel. On the llama.cpp path especially, the sensible-seeming behavior kicks in: it falls back to the CPU, runs your model correctly, with the right output, and never tells you the NPU was never involved. You asked for the NPU on the command line, you got a coherent answer, you deployed it, and it ran on the CPU the whole time.</p>
 
 <p>In my experience this is the first thing to suspect when "the NPU flag did nothing." The flag did do something: it asked for the NPU, the skel was not found, and the graceful fallback swallowed the failure. The lesson is the one every measurement on this blog rests on: never trust that offload happened; measure it. The <a href="../same-binary-cpu-vs-npu/">same-binary post</a> is what that measurement looks like, and when it says everything ran on the CPU, the first thing to check is whether the library path is set and points at the skels for your Hexagon version, v73 here, not v75.</p>
 
