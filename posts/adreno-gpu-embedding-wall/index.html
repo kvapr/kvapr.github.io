@@ -90,10 +90,10 @@
 <p style="margin:0 0 1.5rem"><a href="../../" style="color:var(--muted);text-decoration:none;font-size:.9rem">&#8592; home</a></p>
 
 <h1>Why LLMs won't load on the Adreno GPU: the 256 MiB embedding wall</h1>
-<p class="subtitle">Two months of attempts, three Qualcomm SoCs, one tensor, and one driver number that no document mentions.</p>
+<p class="subtitle">Two months of attempts, three Qualcomm SoCs, one tensor, and one driver number I could not find documented.</p>
 
 <div class="abstract">
-<p>Before this series settled on the NPU, I spent about two months trying to serve language models on the Adreno GPU, first on a QCS6490 and then on the QCS9075, through llama.cpp's OpenCL backend. Every attempt died at model load. This post is the root cause and everything found around it: the single tensor that fails, why quantization does not help, where the 256 MiB limit comes from, what I measured on two boards, what the ecosystem has done about it since, and the one configuration nobody has tried. It is the GPU deep dive behind <a href="../one-memory-three-views/">the memory-hierarchy post</a>. Boards: Dragonwing IQ-9075 EVK with the Adreno 663, on Qualcomm Linux 1.5 and 1.6; earlier attempts on the QCS6490's Adreno 643. Confidence labels as usual: measured, documented, inferred.</p>
+<p>Before this series settled on the NPU, I spent about two months trying to serve language models on the Adreno GPU, first on a QCS6490 and then on the QCS9075, through llama.cpp's OpenCL backend. Every attempt died at model load. This post is the root cause and everything found around it: the single tensor that fails, why quantization does not help, where the 256 MiB limit comes from, what I measured on two boards, what the ecosystem has done about it since, and one configuration I have not seen tried. It is the GPU deep dive behind <a href="../one-memory-three-views/">the memory-hierarchy post</a>. Boards: Dragonwing IQ-9075 EVK with the Adreno 663, on Qualcomm Linux 1.5 and 1.6; earlier attempts on the QCS6490's Adreno 643. Confidence labels as usual: measured, documented, inferred.</p>
 </div>
 
 <h2 id="why">Why try the GPU at all</h2>
