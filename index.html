@@ -106,6 +106,30 @@
     <p class="desc">One worked case, not a guide. A 150M encoder trained on about two thousand of a deployment's own rows became the better per-turn router beside a 4B agent, at a tenth of the latency, and failed to learn the confirm gate. The recipe, the grouped split, three runs, two defects found on the way, and what it cost.</p>
   </div>
 
+  <div class="post">
+    <a class="title" href="posts/where-the-logits-go/">Where the logits go: what each serving path exposes to a decision layer</a>
+    <p class="date">September 2026</p>
+    <p class="desc">A typed decision needs the probability distribution at the first generated position. On the Dragonwing board the production runtime returns none, the one NPU path that would cannot share the device, and what is left is a CPU server beside the running agent. Five serving paths, what each returns, what the text-label fallback costs in accuracy, and a porting checklist.</p>
+  </div>
+
+  <div class="post">
+    <a class="title" href="posts/calibrated-confirm-gate/">Add a calibrated yes/no to your agent's confirm dialog</a>
+    <p class="date">September 2026</p>
+    <p class="desc">Eight steps that turn a local instruction-tuned model into one calibrated gate question on the card a human approves: the llama-server flags, the question as a typed yes/no, reading the distribution instead of the token, labelling your own pairs, grouped-fold calibration, the operating point, the hook, and five pitfalls with measured numbers.</p>
+  </div>
+
+  <div class="post">
+    <a class="title" href="posts/option-order-flips/">When the option order changes the answer</a>
+    <p class="date">September 2026</p>
+    <p class="desc">A 4B and a 0.8B readout both change their answers when only the option order is rotated, for opposite reasons: the larger one flips on content and does it confidently, the smaller one just prefers the letter B. What averaging three rotations buys, what it costs, why a temperature cannot fix it, and what might.</p>
+  </div>
+
+  <div class="post">
+    <a class="title" href="posts/gate-question-wording/">A threshold belongs to a sentence, not to a model</a>
+    <p class="date">September 2026</p>
+    <p class="desc">The same yes/no gate question in two phrasings, against the same model and the same 400 pairs. The ranking does not move, the operating point does, and a temperature provably cannot follow it because scaling fixes p = 0.5. Most of the shift an earlier pass had blamed on the sentence turns out to belong to the answer legend underneath it.</p>
+  </div>
+
   <footer>
     <a href="https://x.com/imdasein">X</a> ·
     <a href="https://www.linkedin.com/in/krish-viswanathan/">LinkedIn</a> ·
