@@ -136,7 +136,7 @@
 
 <h2 id="number">Where 256 comes from</h2>
 
-<p>The number is not a hardware limit, and it is not in Qualcomm's OpenCL guide. Adreno 6xx drivers report 1 GiB of global memory regardless of the physical RAM behind them, and the OpenCL specification's minimum for the largest single allocation is a quarter of global memory. A quarter of 1 GiB is 256 MiB. That mechanism is inferred from the specification and the reported values; the values themselves are measured. On 27 August I probed two IQ-9075 boards, one on Qualcomm Linux 1.5 and one on 1.6:</p>
+<p>The number is not a hardware limit, and I did not find it in Qualcomm's OpenCL guide. Adreno 6xx drivers report 1 GiB of global memory regardless of the physical RAM behind them, and the OpenCL specification's minimum for the largest single allocation is a quarter of global memory. A quarter of 1 GiB is 256 MiB. That mechanism is inferred from the specification and the reported values; the values themselves are measured. On 27 August I probed two IQ-9075 boards, one on Qualcomm Linux 1.5 and one on 1.6:</p>
 
 <div class="tablewrap">
 <table>
@@ -151,7 +151,7 @@
 </table>
 </div>
 
-<p>Two releases apart, the GPU stack did not move. These are, as far as I can find, the first public capability dumps for the Adreno 663. Newer Adreno generations, the 7xx and 8xx parts in current phones, report a 1 GiB cap instead, still a fixed number rather than one that scales with RAM.</p>
+<p>Two releases apart, the GPU stack did not move. As far as I can tell these may be the first public capability dumps for the Adreno 663; I have not found earlier ones. Newer Adreno generations, the 7xx and 8xx parts in current phones, report a 1 GiB cap instead, still a fixed number rather than one that scales with RAM.</p>
 
 <h2 id="ecosystem">What the ecosystem did about it</h2>
 
@@ -169,14 +169,14 @@
 
 <h2 id="untested">A model under the cap, untested</h2>
 
-<p>The cap only kills single tensors over 256 MiB, and I can find no published attempt at the obvious escape. A 4B-class model with a modest vocabulary may have an embedding under the cap, in which case it loads on the GPU today, on stock Qualcomm Linux, with no driver change. The check is a minute's work: inspect the GGUF, find the largest tensor, compare it with 256 MiB, then attempt the load. I have not run it yet. Nor can I find any published attempt of a language model on the Adreno GPU beside a vision model on the Hexagon NPU on any Snapdragon or Dragonwing part. That configuration is the experiment this series is building toward, and this post is its baseline.</p>
+<p>The cap only kills single tensors over 256 MiB, and I have not come across a published attempt at the obvious escape; it may exist and I may have missed it. A 4B-class model with a modest vocabulary may have an embedding under the cap, in which case it loads on the GPU today, on stock Qualcomm Linux, with no driver change. The check is a minute's work: inspect the GGUF, find the largest tensor, compare it with 256 MiB, then attempt the load. I have not run it yet. Nor have I come across a published attempt of a language model on the Adreno GPU beside a vision model on the Hexagon NPU on a Snapdragon or Dragonwing part, though my search was not exhaustive. That configuration is the experiment this series is building toward, and this post is its baseline.</p>
 
 <h2 id="principles">Transferable principles</h2>
 
 <ul>
 <li>On Adreno, the OpenCL limit that matters is per allocation, not per model. Check the largest single tensor before assuming a model will not fit.</li>
 <li>Vocabulary size, not parameter count, decides whether a model clears the wall. Newer models with larger vocabularies are more exposed, and quantization does not help, because embeddings stay at higher precision.</li>
-<li>The 256 MiB figure is a driver policy derived from a hardcoded 1 GiB global-memory report, not a property of the RAM. It is undocumented; measure it on your board.</li>
+<li>The 256 MiB figure is a driver policy derived from a hardcoded 1 GiB global-memory report, not a property of the RAM. I could not find it documented, so measure it on your board.</li>
 <li>The upstream fix exists and does not apply here. Before relying on an escape hatch, check the driver extension list, not the OpenCL version.</li>
 <li>A GPU lane on this class of board is about a second tenant for the chip, not a faster model. Judge it by what it frees, and by energy per token, not by decode speed.</li>
 </ul>

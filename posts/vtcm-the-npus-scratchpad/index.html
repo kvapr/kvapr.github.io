@@ -91,7 +91,7 @@
 <p class="subtitle">8 MB of on-chip SRAM that the compiler plans by hand. It is a large part of why compiled NPU models are fast, and it decides whether two models can share the chip.</p>
 
 <div class="abstract">
-<p>This post explains one part of the Hexagon NPU that no spec sheet lists and no public document explains well: VTCM, the small software-managed memory that the vector and matrix engines are fed from. It covers what VTCM is, why it is not a cache, what contention for it looks like, how it differs from the NPU's other memory wall, and where this level of detail can be found in public. The measured size and the profiling observations are from a Qualcomm QCS9075 on the Dragonwing IQ-9075 EVK, Hexagon v73. A longer article on the NPU's whole memory hierarchy is planned; this is its first section.</p>
+<p>This post explains one part of the Hexagon NPU that no spec sheet lists and, as far as I have found, no public document explains well: VTCM, the small software-managed memory that the vector and matrix engines are fed from. It covers what VTCM is, why it is not a cache, what contention for it looks like, how it differs from the NPU's other memory wall, and where this level of detail can be found in public. The measured size and the profiling observations are from a Qualcomm QCS9075 on the Dragonwing IQ-9075 EVK, Hexagon v73. A longer article on the NPU's whole memory hierarchy is planned; this is its first section.</p>
 </div>
 
 <h2 id="what">What VTCM is</h2>
