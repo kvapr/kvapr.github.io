@@ -98,7 +98,7 @@
 
 <p>Error 6001. Every subsequent request, the same. The model was there, its weights had mapped, but no inference could run, because there was no room left to map the thing inference actually needs. And when I did the obvious thing, killed the process and retried, the board did not recover cleanly: the kernel began retrying a registration that could never succeed, flooding the console, and the box needed a reboot to come back.</p>
 
-<p>This is the least glamorous part of running a model on this silicon, and possibly the most useful. You cannot debug what you cannot see, and FastRPC is invisible until it breaks.</p>
+<p>This is the least glamorous part of running a model on this silicon, and, I think, among the most useful. You cannot debug what you cannot see, and FastRPC is invisible until it breaks.</p>
 
 <h2 id="anatomy">FastRPC anatomy: two processors, one phone line</h2>
 
@@ -155,11 +155,11 @@
 
 <h2 id="fallback">Failure class 1: the silent CPU fallback</h2>
 
-<p>Here is the most common way people lose a week on this platform, and it produces no error at all.</p>
+<p>Here is an easy way to lose a week on this platform, and it produces no error at all.</p>
 
 <p>If the library path is unset or wrong, the runtime cannot load the DSP skel. On the llama.cpp path especially, the sensible-seeming behavior kicks in: it falls back to the CPU, runs your model correctly, with the right output, and never tells you the NPU was never involved. You asked for the NPU on the command line, you got a coherent answer, you shipped it, and it ran on the CPU the whole time.</p>
 
-<p>This is the number-one cause of "the NPU flag did nothing." The flag did do something: it asked for the NPU, the skel was not found, and the graceful fallback swallowed the failure. The lesson is the one every measurement on this blog rests on: never trust that offload happened; measure it. The <a href="../same-binary-cpu-vs-npu/">same-binary post</a> is what that measurement looks like, and when it says everything ran on the CPU, the first thing to check is whether the library path is set and points at the skels for your Hexagon version, v73 here, not v75.</p>
+<p>In my experience this is the first thing to suspect when "the NPU flag did nothing." The flag did do something: it asked for the NPU, the skel was not found, and the graceful fallback swallowed the failure. The lesson is the one every measurement on this blog rests on: never trust that offload happened; measure it. The <a href="../same-binary-cpu-vs-npu/">same-binary post</a> is what that measurement looks like, and when it says everything ran on the CPU, the first thing to check is whether the library path is set and points at the skels for your Hexagon version, v73 here, not v75.</p>
 
 <h2 id="wall">Failure class 2: the wall</h2>
 
@@ -195,7 +195,7 @@ qcom,fastrpc-cb ...:compute-cb@3: failed to map buffer, fd = 120</code></pre>
 
 <p>This is why the compiled bundle's context length is baked in and cannot be raised with a runtime flag. The context window is not a configuration knob you turn; it is a hardware budget you commit to when you compile, and getting it wrong means the artifact does not load at all. <a href="../context-window-8k/">The context-window post</a> is the other half of the trade: the 8K build fits, and runs about 1.9 times slower per turn, because a fixed-shape graph pays for the whole window on every token. Choose the window deliberately: enough for the workload, comfortably under the KV ceiling, and no more.</p>
 
-<p>It also dictates a server-layer rule: reject oversize prompts before they reach the engine. If the context is 4096 and a 6000-token request arrives, the right behavior is an immediate, clean HTTP error, not handing it to the runtime and discovering the wall the hard way. The soak test deliberately fires 6K-token prompts at the 4K deployment to prove they are rejected instantly and cleanly, twelve of twelve, before any DSP work. Defending the wall at the front door is part of a correct deployment, not an afterthought.</p>
+<p>It also dictates a server-layer rule: reject oversize prompts before they reach the engine. If the context is 4096 and a 6000-token request arrives, the right behavior is an immediate, clean HTTP error, not handing it to the runtime and discovering the wall the hard way. The soak test deliberately fires 6K-token prompts at the 4K deployment to prove they are rejected instantly and cleanly, twelve of twelve, before any DSP work. Defending the wall at the front door is part of a sound deployment, not an afterthought.</p>
 
 <h2 id="hygiene">Failure class 3: lifecycle hygiene, or how to brick inference until reboot</h2>
 
@@ -222,7 +222,7 @@ reset_rc = lib.GenieDialog_reset(dialog)   # reset, NOT recreate</code></pre>
 
 <h2 id="tax">The per-token tax</h2>
 
-<p>One last thing FastRPC explains, and it is the most counterintuitive result on this board. FastRPC is a round trip: marshal, call, wait, copy back. A token's worth of decode work is not one round trip but many, and they add up to tens of milliseconds of boundary overhead per token before any actual math. For prefill that is negligible, amortized across a batch of prompt tokens. Decode generates one token at a time, so every token pays the tax in full, and on a small model, where the matrix math per token is tiny, the tax is a large share of the time. That is why the CPU, which has no boundary to cross, holds its own on decode while losing prefill by five to seven times. <a href="../same-binary-cpu-vs-npu/">The same-binary post</a> has the measurement; <a href="../one-memory-three-views/">the memory-hierarchy post</a> has the other half of the reason, the shared bandwidth.</p>
+<p>One last thing FastRPC explains, and it is the result on this board I found most counterintuitive. FastRPC is a round trip: marshal, call, wait, copy back. A token's worth of decode work is not one round trip but many, and they add up to tens of milliseconds of boundary overhead per token before any actual math. For prefill that is negligible, amortized across a batch of prompt tokens. Decode generates one token at a time, so every token pays the tax in full, and on a small model, where the matrix math per token is tiny, the tax is a large share of the time. That is why the CPU, which has no boundary to cross, holds its own on decode while losing prefill by five to seven times. <a href="../same-binary-cpu-vs-npu/">The same-binary post</a> has the measurement; <a href="../one-memory-three-views/">the memory-hierarchy post</a> has the other half of the reason, the shared bandwidth.</p>
 
 <h2 id="checklist">A checklist: verifying the FastRPC path on a new board</h2>
 
@@ -249,7 +249,7 @@ reset_rc = lib.GenieDialog_reset(dialog)   # reset, NOT recreate</code></pre>
 <li>Context length is a hardware memory budget, not a configuration knob. The KV cache competes for a mapping ceiling of about 1 to 1.5 GB per context; over budget does not slow down, it fails to load. Do the KV arithmetic up front.</li>
 <li>The DSP holds resources your process teardown does not know about. Reset dialogs, do not recreate them; free explicitly on shutdown. Install the signal handler.</li>
 <li>The round-trip tax is why small models decode about as fast on the CPU. Boundary cost, not compute, is the bottleneck at decode; the accelerator's win is prefill and performance per watt.</li>
-<li>The same physics applies to any accelerator behind a call boundary with its own address space, not just Hexagon. Budget for the boundary, not just the FLOPs.</li>
+<li>The same physics should apply to other accelerators behind a call boundary with their own address space, not just Hexagon. Budget for the boundary, not just the FLOPs.</li>
 </ul>
 
 </main>
